@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    // File Layout
+    "typeRoots": ["./node_modules/@types", "./src/types"],
+
+    // Environment Settings
+    "module": "NodeNext",
+    "target": "ESNext",
+    "types": [],
+
+    // Outputs
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    
+
+    // Stricter Typechecking
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    // Module Interop
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    // Recommended Strict Options
+    "strict": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+
+    // JSX Support for React
+    "jsx": "react-jsx"
+  }
+}
