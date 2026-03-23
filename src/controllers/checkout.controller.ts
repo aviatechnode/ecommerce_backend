@@ -1,10 +1,12 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prismadb.js";
-import { Prisma, AddressType } from "@prisma/client";
+import { Prisma, AddressType, NigerianState } from "@prisma/client";
+import { allocateVariantStock } from "../services/warehouse-allocation.service.js";
+import { calculateOrderMetrics, calculateShippingFee } from "../services/shipping.service.js";
 import type { PermissionString } from "../utils/rbac.js";
 
 /* ======================================================
-   TYPES
+TYPES
 ====================================================== */
 
 interface AuthUser {
@@ -20,7 +22,7 @@ interface AuthRequest extends Request {
 }
 
 /* ======================================================
-   ORDER NUMBER GENERATOR
+ORDER NUMBER GENERATOR
 ====================================================== */
 
 function generateOrderNumber() {
@@ -28,31 +30,7 @@ function generateOrderNumber() {
 }
 
 /* ======================================================
-   SELECT INVENTORY (MULTI-WAREHOUSE SAFE)
-====================================================== */
-
-function selectInventory(
-  inventories: {
-    id: string;
-    stock: number;
-    reserved: number;
-    warehouseId: string;
-  }[],
-  quantity: number
-) {
-  const inventory = inventories.find(
-    (inv) => inv.stock - inv.reserved >= quantity
-  );
-
-  if (!inventory) {
-    throw new Error("No warehouse has enough available stock");
-  }
-
-  return inventory;
-}
-
-/* ======================================================
-   CHECKOUT CONTROLLER
+CHECKOUT CONTROLLER
 ====================================================== */
 
 export const checkout = async (req: AuthRequest, res: Response) => {
@@ -65,9 +43,9 @@ export const checkout = async (req: AuthRequest, res: Response) => {
 
     const userId = req.user.id;
 
-    /* ================================================
-       CHECK IDEMPOTENCY
-    ================================================= */
+    //////////////////////////////////////////////////////
+    // IDEMPOTENCY CHECK
+    //////////////////////////////////////////////////////
 
     const existingKey = await prisma.idempotencyKey.findUnique({
       where: { key: req.idempotencyKey },
@@ -80,24 +58,18 @@ export const checkout = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    /* ================================================
-       GET CART
-    ================================================= */
+    //////////////////////////////////////////////////////
+    // GET CART
+    //////////////////////////////////////////////////////
 
     const cart = await prisma.cart.findUnique({
       where: { userId },
       include: {
         items: {
           include: {
-            product: {
+            variant: {
               include: {
-                variants: {
-                  include: {
-                    pricings: true,
-                    inventories: true,
-                  },
-                },
-                specifications: true,
+                product: true,
               },
             },
           },
@@ -108,9 +80,9 @@ export const checkout = async (req: AuthRequest, res: Response) => {
     if (!cart || cart.items.length === 0)
       return res.status(400).json({ message: "Cart is empty" });
 
-    /* ================================================
-       GET DELIVERY ADDRESS
-    ================================================= */
+    //////////////////////////////////////////////////////
+    // GET DELIVERY ADDRESS
+    //////////////////////////////////////////////////////
 
     const address = await prisma.address.findFirst({
       where: {
@@ -120,15 +92,14 @@ export const checkout = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    if (!address) {
+    if (!address)
       return res.status(400).json({
         message: "No default DELIVERY address found",
       });
-    }
 
-    /* ================================================
-       TRANSACTION
-    ================================================= */
+    //////////////////////////////////////////////////////
+    // TRANSACTION
+    //////////////////////////////////////////////////////
 
     const result = await prisma.$transaction(async (tx) => {
 
@@ -136,77 +107,83 @@ export const checkout = async (req: AuthRequest, res: Response) => {
 
       const orderItems: Prisma.OrderItemCreateWithoutOrderInput[] = [];
 
+      ////////////////////////////////////////////////////
+      // STOCK ALLOCATION
+      ////////////////////////////////////////////////////
+
       for (const item of cart.items) {
 
-        const product = item.product;
-
-        const variant = product.variants[0];
+        const variant = item.variant;
 
         if (!variant)
-          throw new Error("Product variant missing");
+          throw new Error("Variant missing");
 
-        const pricing = variant.pricings[0];
-
-        if (!pricing)
-          throw new Error("Product pricing missing");
-
-        const inventory = selectInventory(
-          variant.inventories,
-          item.quantity
+        const allocations = await allocateVariantStock(
+          variant.id,
+          item.quantity,
+          address.state as NigerianState
         );
 
-        /* ============================================
-           ATOMIC STOCK LOCK
-        ============================================ */
+        //////////////////////////////////////////////////
+        // DECREMENT STOCK PER WAREHOUSE
+        //////////////////////////////////////////////////
 
-        const stockUpdate = await tx.productInventory.updateMany({
-          where: {
-            id: inventory.id,
-            stock: { gte: item.quantity },
-          },
-          data: {
-            stock: { decrement: item.quantity },
-          },
-        });
+        for (const alloc of allocations) {
 
-        if (stockUpdate.count === 0) {
-          throw new Error("Stock conflict");
+          const update = await tx.productInventory.updateMany({
+            where: {
+              id: alloc.inventoryId,
+              stock: { gte: alloc.quantity },
+            },
+            data: {
+              stock: { decrement: alloc.quantity },
+            },
+          });
+
+          if (update.count === 0)
+            throw new Error("Stock conflict");
         }
 
-        const unitPrice = pricing.salesPrice ?? pricing.price;
+        //////////////////////////////////////////////////
+        // PRICE CALCULATION
+        //////////////////////////////////////////////////
+
+        const unitPrice = new Prisma.Decimal(variant.price);
 
         const totalPrice = unitPrice.mul(item.quantity);
 
         subtotal = subtotal.add(totalPrice);
 
+        //////////////////////////////////////////////////
+        // CREATE ORDER ITEM
+        //////////////////////////////////////////////////
+
         orderItems.push({
-          product: { connect: { id: product.id } },
-          productName: product.name,
+          variant: { connect: { id: variant.id } },
+          productName: variant.product.name,
+          variantName: variant.name,
+          sku: variant.sku,
           unitPrice,
           quantity: item.quantity,
-          totalPrice,
         });
       }
 
-      /* ================================================
-         DELIVERY (simplified — can expand later)
-      ================================================= */
-
-      const deliveryFee = new Prisma.Decimal(0);
-
-      const totalAmount = subtotal.add(deliveryFee);
-
-      /* ================================================
-         CREATE ORDER
-      ================================================= */
+      ////////////////////////////////////////////////////
+      // CREATE ORDER FIRST (needed for shipping metrics)
+      ////////////////////////////////////////////////////
 
       const order = await tx.order.create({
         data: {
           orderNumber: generateOrderNumber(),
           user: { connect: { id: userId } },
+
+          status: "PENDING",
+          paymentStatus: "PENDING",
+
           subtotal,
-          deliveryFee,
-          totalAmount,
+          deliveryFee: new Prisma.Decimal(0),
+          totalAmount: subtotal,
+
           currency: "NGN",
 
           items: {
@@ -231,53 +208,95 @@ export const checkout = async (req: AuthRequest, res: Response) => {
         },
       });
 
-      /* ================================================
-         CREATE PAYMENT
-      ================================================= */
+      ////////////////////////////////////////////////////
+      // CALCULATE SHIPPING
+      ////////////////////////////////////////////////////
+
+      const metrics = await calculateOrderMetrics(order.id);
+
+      const warehouse = await tx.warehouse.findFirst();
+
+      if (!warehouse)
+        throw new Error("No warehouse configured");
+
+      const shipping = await calculateShippingFee(
+        warehouse.state,
+        address.state,
+        metrics.chargeableWeight
+      );
+
+      ////////////////////////////////////////////////////
+      // UPDATE ORDER WITH SHIPPING
+      ////////////////////////////////////////////////////
+
+      const deliveryFee = new Prisma.Decimal(shipping.fee);
+
+      const totalAmount = subtotal.add(deliveryFee);
+
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          deliveryFee,
+          totalAmount,
+        },
+      });
+
+      ////////////////////////////////////////////////////
+      // CREATE PAYMENT
+      ////////////////////////////////////////////////////
 
       const payment = await tx.payment.create({
         data: {
           orderId: order.id,
           reference: `PAY-${Date.now()}`,
           amount: totalAmount,
-          currency: "NGN",
+          status: "PENDING",
         },
       });
 
-      /* ================================================
-         CLEAR CART
-      ================================================= */
+      ////////////////////////////////////////////////////
+      // CLEAR CART
+      ////////////////////////////////////////////////////
 
       await tx.cartItem.deleteMany({
         where: { cartId: cart.id },
       });
 
-      /* ================================================
-         STORE IDEMPOTENCY
-      ================================================= */
+      ////////////////////////////////////////////////////
+      // STORE IDEMPOTENCY RESPONSE
+      ////////////////////////////////////////////////////
 
       await tx.idempotencyKey.create({
         data: {
           key: req.idempotencyKey!,
           userId,
           response: {
-            order,
-            payment,
+            orderId: order.id,
+            paymentId: payment.id,
           },
         },
       });
 
-      return { order, payment };
+      return {
+        order,
+        payment,
+        shipping,
+        metrics,
+      };
+
     });
 
-    /* ================================================
-       RESPONSE
-    ================================================= */
+    //////////////////////////////////////////////////////
+    // RESPONSE
+    //////////////////////////////////////////////////////
 
     return res.status(201).json({
       message: "Order created successfully",
       order: result.order,
       payment: result.payment,
+      shippingFee: result.shipping.fee,
+      distanceKm: result.shipping.distance,
+      metrics: result.metrics,
     });
 
   } catch (error: any) {
@@ -285,6 +304,12 @@ export const checkout = async (req: AuthRequest, res: Response) => {
     if (error.message === "Stock conflict") {
       return res.status(409).json({
         message: "Some items are no longer available",
+      });
+    }
+
+    if (error.message === "Out of stock") {
+      return res.status(400).json({
+        message: "Item is out of stock",
       });
     }
 

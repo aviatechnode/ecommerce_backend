@@ -93,6 +93,7 @@ model User {
   email      String   @unique
   password   String
   name       String?
+  googleId  String?  @unique
 
   roleId     String
   role       Role @relation(fields: [roleId], references: [id])
@@ -102,6 +103,8 @@ model User {
 
   resetPasswordToken   String?
   resetPasswordExpires DateTime?
+  isOnline Boolean @default(false)
+  lastSeen DateTime?
 
   createdAt DateTime @default(now())
 
@@ -114,7 +117,10 @@ model User {
 
   idempotencyKeys IdempotencyKey[]
 
+  notifications Notification[]
   auditLogs AuditLog[]
+  messages Message[]
+  conversationParticipants ConversationParticipant[]
 }
 
 model RefreshToken {
@@ -138,21 +144,17 @@ model RefreshToken {
 model Address {
   id     String @id @default(uuid())
   userId String
-
   type AddressType
-
   street String
   city   String
   state  NigerianState
   lga    String
-
+  landmark String?
+  postalCode String?
   phone   String
   country String @default("Nigeria")
-
-  isDefault Boolean @default(false)
-
+  isDefault Boolean? @default(false)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -333,6 +335,7 @@ model VehicleModel {
   make VehicleMake @relation(fields: [makeId], references: [id])
 
   generations VehicleGeneration[]
+   @@unique([makeId, name])
 }
 
 model VehicleGeneration {
@@ -347,6 +350,7 @@ model VehicleGeneration {
   model VehicleModel @relation(fields: [modelId], references: [id])
 
   engines VehicleEngine[]
+  @@unique([modelId, name])
 }
 
 model VehicleEngine {
@@ -359,6 +363,7 @@ model VehicleEngine {
   generation VehicleGeneration @relation(fields: [generationId], references: [id])
 
   trims VehicleTrim[]
+  @@unique([generationId, engineCode])
 }
 
 model VehicleTrim {
@@ -370,6 +375,21 @@ model VehicleTrim {
   engine VehicleEngine @relation(fields: [engineId], references: [id])
 
   productFitments ProductFitment[]
+  @@unique([engineId, name])
+}
+
+model FitmentIndex {
+  id String @id @default(uuid())
+
+  productId String
+
+  make  String
+  model String
+  year  Int
+
+  createdAt DateTime @default(now())
+
+  @@index([make, model, year])
 }
 
 model ProductFitment {
@@ -663,10 +683,6 @@ model Refund {
 // SHIPPING
 //////////////////////////////////////////////////////////
 
-//////////////////////////////////////////////////////////
-// SHIPPING
-//////////////////////////////////////////////////////////
-
 model Courier {
   id   String @id @default(uuid())
   name String @unique
@@ -813,13 +829,115 @@ model AuditLog {
   action   String
   entity   String
   entityId String?
-
+  ipAddress String?
+  userAgent String?
   metadata Json?
 
   user User @relation(fields: [userId], references: [id])
 
   createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
 }
+
+//////////////////////////////
+// NOTIFICATIONS
+//////////////////////////////
+
+model Notification {
+  id String @id @default(uuid())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type NotificationType
+  title String
+  message String
+
+  isRead Boolean @default(false)
+
+  entityType String?   // ORDER, PAYMENT, SHIPMENT, SYSTEM
+  entityId   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([entityType, entityId])
+}
+
+
+//////////////////////////////
+// Chat
+//////////////////////////////
+
+model Conversation {
+  id String @id @default(uuid())
+
+  status ConversationStatus @default(OPEN)
+
+  // ⚡ performance
+  lastMessageAt DateTime?
+  lastMessage   String?
+
+  messages Message[]
+  participants ConversationParticipant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([lastMessageAt])
+}
+
+model ConversationParticipant {
+  id String @id @default(uuid())
+
+  conversationId String
+  userId         String
+
+  roleInConversation ConversationRole
+
+  unreadCount Int @default(0)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt DateTime @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id String @id @default(uuid())
+
+  conversationId String
+  senderId       String
+
+  content String
+  type MessageType @default(TEXT)
+
+  attachments Json?
+
+  deliveredAt DateTime?
+  readAt      DateTime?
+  isRead Boolean @default(false)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+enum ConversationRole {
+  CUSTOMER
+  ADMIN
+  SUPPORT
+  SYSTEM
+}
+
 
 //////////////////////////////////////////////////////////
 // ENUMS
@@ -913,4 +1031,25 @@ enum NigerianState {
   YOBE
   ZAMFARA
   FCT
+}
+
+enum NotificationType {
+  ORDER_UPDATE
+  PAYMENT_UPDATE
+  SHIPPING_UPDATE
+  PROMOTION
+  SYSTEM
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+  RESOLVED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM
 }

@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
-import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "../schemas/auth.schema.js";
+import { signupSchema, signinSchema, forgotPasswordSchema, resetPasswordSchema } from "../schemas/auth.schema.js";
 
 import { prisma } from "../lib/prismadb.js";
 import {
@@ -24,12 +24,12 @@ const RESET_TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour
    REGISTER
 ========================================================= */
 
-export const register = async (
+export const signup = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
   try {
-    const parsed = registerSchema.safeParse(req.body);
+    const parsed = signupSchema.safeParse(req.body);
     if (!parsed.success)
       return res.status(400).json({ errors: parsed.error.format() });
 
@@ -128,15 +128,52 @@ export const register = async (
 };
 
 /* =========================================================
+   VERIFY EMAIL
+========================================================= */
+
+export const verifyEmail = async (req: Request, res: Response) => {
+  try {
+    const tokenParam = req.params.token;
+    
+    if (!tokenParam || Array.isArray(tokenParam)) {
+      return res.status(400).json({ message: "Invalid verification token" });
+    }
+
+    const token = tokenParam;
+
+    const user = await prisma.user.findFirst({
+      where: { verificationToken: token },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid verification token" });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerified: true,
+        verificationToken: null,
+      },
+    });
+
+    return res.json({ message: "Email verified successfully" });
+  } catch (error) {
+    console.error("Verify Email Error:", error);
+    return res.status(500).json({ message: "Server Error" });
+  }
+};
+
+/* =========================================================
    LOGIN
 ========================================================= */
 
-export const login = async (
+export const signin = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
   try {
-    const parsed = loginSchema.safeParse(req.body);
+    const parsed = signinSchema.safeParse(req.body);
     if (!parsed.success)
       return res.status(400).json({ errors: parsed.error.format() });
 
@@ -399,7 +436,7 @@ export const resetPassword = async (
    LOGOUT
 ========================================================= */
 
-export const logout = async (
+export const signout = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
@@ -415,6 +452,43 @@ export const logout = async (
     res.clearCookie("refreshToken");
 
     return res.json({ message: "Logged out successfully" });
+  } catch {
+    return res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+/* =========================================================
+   ME
+========================================================= */
+export const me = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: { role: true },
+    });
+
+    if (!user || !user.role) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const permissions = Array.from(
+      await resolvePermissions(user.role.id)
+    );
+
+    return res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        roleName: user.role.name,
+        permissions,
+      },
+    });
   } catch {
     return res.status(500).json({ message: "Server Error" });
   }

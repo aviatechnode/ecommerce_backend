@@ -9,16 +9,13 @@ import { AddressType, NigerianState, Prisma } from "@prisma/client";
 
 const createAddressSchema = z.object({
   type: z.nativeEnum(AddressType),
-
   street: z.string().min(2),
-  area: z.string().optional(),
   city: z.string().min(2),
   state: z.nativeEnum(NigerianState),
   lga: z.string().min(2),
   landmark: z.string().optional(),
   postalCode: z.string().optional(),
   phone: z.string().min(7),
-
   isDefault: z.boolean().optional(),
 });
 
@@ -57,9 +54,7 @@ export const createAddress = async (
         data: {
           userId: req.user!.id,
           type: data.type,
-
           street: data.street,
-          area: data.area ?? null,
           city: data.city,
           state: data.state,
           lga: data.lga,
@@ -165,7 +160,6 @@ export const updateAddress = async (
     const updateData: Prisma.AddressUpdateInput = {};
 
     if (data.street !== undefined) updateData.street = data.street;
-    if (data.area !== undefined) updateData.area = data.area ?? null;
     if (data.city !== undefined) updateData.city = data.city;
     if (data.state !== undefined) updateData.state = data.state;
     if (data.lga !== undefined) updateData.lga = data.lga;

@@ -10,7 +10,7 @@ export const csrfMiddleware: RequestHandler = (req, res, next) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
-      maxAge: 3600_000, // 1 hour
+      maxAge: 3600_000,
     });
     req.headers["x-csrf-token"] = token;
   }

@@ -160,7 +160,7 @@ export const getMyCart = async (req: AuthRequest, res: Response) => {
 };
 
 //////////////////////////////////////////////////////////
-// ADD TO CART
+// ADD TO CART (WITH WAREHOUSE ALLOCATION)
 //////////////////////////////////////////////////////////
 
 export const addToCart = async (req: AuthRequest, res: Response) => {
@@ -179,7 +179,6 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
       where: { id: variantId },
       include: {
         product: true,
-        inventories: true,
       },
     });
 
@@ -189,19 +188,29 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
     if (!variant.product.isActive)
       return res.status(400).json({ message: "Product inactive" });
 
-    const inventory = variant.inventories[0];
+    const address = await prisma.address.findFirst({
+      where: {
+        userId: req.user.id,
+        type: "DELIVERY",
+        isDefault: true,
+      },
+    });
 
-    if (!inventory)
-      return res.status(400).json({ message: "Inventory missing" });
+    if (!address)
+      return res.status(400).json({
+        message: "Delivery address required",
+      });
 
-    const available = inventory.stock - inventory.reserved;
-
-    if (quantity > available)
-      return res.status(400).json({ message: "Insufficient stock" });
+    const allocations = await allocateVariantStock(
+      variantId,
+      quantity,
+      address.state as NigerianState
+    );
 
     const cart = await getOrCreateCart(req.user.id);
 
     const item = await prisma.$transaction(async (tx) => {
+
       const existing = await tx.cartItem.findUnique({
         where: {
           cartId_variantId: {
@@ -211,27 +220,23 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
         },
       });
 
-      if (existing) {
-        const newQty = existing.quantity + quantity;
-
-        if (newQty > available)
-          throw new Error("Insufficient stock");
-
+      for (const alloc of allocations) {
         await tx.productInventory.update({
-          where: { id: inventory.id },
-          data: { reserved: { increment: quantity } },
-        });
-
-        return tx.cartItem.update({
-          where: { id: existing.id },
-          data: { quantity: newQty },
+          where: { id: alloc.inventoryId },
+          data: {
+            reserved: { increment: alloc.quantity },
+          },
         });
       }
 
-      await tx.productInventory.update({
-        where: { id: inventory.id },
-        data: { reserved: { increment: quantity } },
-      });
+      if (existing) {
+        return tx.cartItem.update({
+          where: { id: existing.id },
+          data: {
+            quantity: existing.quantity + quantity,
+          },
+        });
+      }
 
       return tx.cartItem.create({
         data: {
@@ -241,17 +246,25 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
           unitPrice: variant.price,
         },
       });
+
     });
 
     return res.status(201).json({
       message: "Added to cart",
       item,
+      allocations,
     });
+
   } catch (error: any) {
-    if (error.message === "Insufficient stock")
+
+    if (error.message === "Out of stock")
+      return res.status(400).json({ message: "Out of stock" });
+
+    if (error.message === "Insufficient stock across warehouses")
       return res.status(400).json({ message: error.message });
 
     console.error("Add To Cart Error:", error);
+
     return res.status(500).json({ message: "Server error" });
   }
 };

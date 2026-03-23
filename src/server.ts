@@ -5,69 +5,84 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import hpp from "hpp";
+
 import checkoutRoutes from "./routes/checkout.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
 import categoryRoutes from "./routes/category.routes.js";
+import wishlistRoutes from "./routes/wishlist.routes.js";
+import authRoutes from "./routes/auth.routes.js";
+import googleAuthRoutes from "./routes/google.auth.routes.js";
+
 import { idempotencyMiddleware } from "./middlewares/idempotency.middleware.js";
 import { csrfMiddleware } from "./middlewares/csrf.middleware.js";
-import wishlistRoutes from "./routes/wishlist.routes.js";
+import { requestContextMiddleware } from "./middlewares/request.context.middleware.js";
 
-
-
-
-
-import authRoutes from "./routes/auth.routes.js";
+import passport from "passport";
+import "./strategies/google.strategy.js";
 
 dotenv.config({ quiet: true });
 
 const app: Application = express();
 
 /* ------------------------------------------------ */
+/* Allowed origins                                  */
+/* ------------------------------------------------ */
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+];
+
+/* ------------------------------------------------ */
 /* Core Middleware                                  */
 /* ------------------------------------------------ */
 
-// CORS with credentials
+// ✅ CORS with credentials
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   })
 );
 
 app.use(express.json());
 app.use(cookieParser());
+app.use(requestContextMiddleware);
+
+// ✅ Passport (Google auth)
+app.use(passport.initialize());
 
 /* ------------------------------------------------ */
 /* Security Middleware                              */
 /* ------------------------------------------------ */
-app.use(helmet()); // HTTP headers
-app.use(hpp()); // Prevent HTTP parameter pollution
+app.use(helmet());
+app.use(hpp());
 
 /* ------------------------------------------------ */
-/* Rate Limiting (per route)                        */
+/* Rate Limiting (FIXED)                            */
 /* ------------------------------------------------ */
+
 const authLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutes
+  windowMs: 10 * 60 * 1000, // 10 mins
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-app.use("/api/auth", authLimiter);
+// ✅ ONLY protect login/register (NOT Google OAuth)
+app.use("/api/auth/signin", authLimiter);
+app.use("/api/auth/signup", authLimiter);
 
 /* ------------------------------------------------ */
-/* CSRF Protection (double-submit cookie pattern)  */
+/* CSRF Token Endpoint                              */
 /* ------------------------------------------------ */
-
-/**
- * Modern CSRF without csurf:
- * 1. Generate a random token per session
- * 2. Set it in a httpOnly cookie (server) + send to client
- * 3. Client sends token back in header for state-changing requests
- */
-
-
-// Endpoint for client to fetch CSRF token
 app.get("/api/csrf-token", csrfMiddleware, (req, res) => {
   res.json({ csrfToken: req.cookies?.csrfToken });
 });
@@ -76,22 +91,37 @@ app.get("/api/csrf-token", csrfMiddleware, (req, res) => {
 /* Routes                                           */
 /* ------------------------------------------------ */
 
-app.use("/api/auth", csrfMiddleware, authRoutes);
+// ✅ AUTH (includes Google)
+app.use("/api/auth", authRoutes);
+app.use("/api/auth", googleAuthRoutes);
+
+// ✅ PUBLIC
 app.use("/api/categories", categoryRoutes);
 
-app.use(idempotencyMiddleware);
-app.use("/api/checkout", checkoutRoutes);
+// ✅ CHECKOUT (critical protection)
+app.use(
+  "/api/checkout",
+  csrfMiddleware,
+  idempotencyMiddleware,
+  checkoutRoutes
+);
+
+// ✅ WISHLIST
+app.use("/api/wishlist", csrfMiddleware, wishlistRoutes);
+
+// ✅ WEBHOOKS
 app.use("/webhooks", webhookRoutes);
-app.use("/api/wishlist", wishlistRoutes);
 
-
+/* ------------------------------------------------ */
+/* OPTIONAL: silence favicon noise                  */
+/* ------------------------------------------------ */
+app.get("/favicon.ico", (_, res) => res.status(204).end());
 
 /* ------------------------------------------------ */
 /* Server                                           */
 /* ------------------------------------------------ */
-
 const PORT = Number(process.env.PORT) || 8080;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
