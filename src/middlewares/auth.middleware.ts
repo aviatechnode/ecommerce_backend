@@ -1,133 +1,113 @@
 import type { Request, Response, NextFunction } from "express";
-import jwt, { type JwtPayload } from "jsonwebtoken";
-import type { PermissionString } from "../utils/rbac.js";
-import { SUPER_ADMIN_ROLE } from "../utils/rbac.js";
+import { prisma } from "../lib/prismadb.js";
+import {
+  resolvePermissions,
+  type PermissionString,
+} from "../utils/rbac.js";
 
-/* ================= ENV ================= */
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) throw new Error("JWT_SECRET is not defined");
+/* =========================================================
+   AUTH MIDDLEWARE
+========================================================= */
 
-/* ================= Extend Express ================= */
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        id: string;
-        roleId: string;
-        permissions: PermissionString[];
-        isSuperAdmin: boolean;
-      };
-    }
-  }
-}
-
-/* ================= Token Payload ================= */
-interface TokenPayload extends JwtPayload {
-  id: string;
-  roleId: string;
-  roleName: string;
-  permissions: PermissionString[];
-  type: "access";
-}
-
-/* ================= Type Guard ================= */
-function isTokenPayload(payload: unknown): payload is TokenPayload {
-  if (!payload || typeof payload !== "object") return false;
-
-  const p = payload as TokenPayload;
-
-  return (
-    p.type === "access" &&
-    typeof p.id === "string" &&
-    typeof p.roleId === "string" &&
-    typeof p.roleName === "string" &&
-    Array.isArray(p.permissions)
-  );
-}
-
-/* ================= PROTECT ================= */
-export const protect = (
+export const protect = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const authHeader = req.headers.authorization;
+    const refreshToken = req.cookies?.refreshToken;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "Not authorized" });
+    if (!refreshToken) {
+      return res.status(401).json({ message: "No session" });
     }
 
-    const token = authHeader.slice(7);
-    if (!token) {
-      return res.status(401).json({ message: "Token missing" });
+    const session = await prisma.refreshToken.findUnique({
+      where: { token: refreshToken },
+    });
+
+    if (!session) {
+      return res.status(401).json({ message: "Invalid session" });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
-
-    if (!isTokenPayload(decoded)) {
-      return res.status(401).json({ message: "Invalid token" });
+    if (session.expiresAt < new Date()) {
+      return res.status(401).json({ message: "Session expired" });
     }
 
-    const isSuperAdmin =
-      decoded.roleName === SUPER_ADMIN_ROLE;
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      include: { role: true },
+    });
+
+    if (!user || !user.role) {
+      return res.status(401).json({ message: "User not found" });
+    }
+
+    const permissions = await resolvePermissions(user.role.id);
 
     req.user = {
-      id: decoded.id,
-      roleId: decoded.roleId,
-      permissions: decoded.permissions,
-      isSuperAdmin,
+      id: user.id,
+      roleId: user.role.id,
+      roleName: user.role.name,
+      permissions,
+      isSuperAdmin: permissions.has("*"),
     };
 
     next();
-  } catch {
-    return res.status(401).json({
-      message: "Invalid or expired token",
-    });
+  } catch (error) {
+    console.error("AUTH ERROR:", error);
+    return res.status(401).json({ message: "Unauthorized" });
   }
 };
 
-/* ================= REQUIRE PERMISSION ================= */
+/* =========================================================
+   PERMISSION CHECKER
+========================================================= */
+
+function hasPermission(
+  permissions: Set<PermissionString>,
+  required: PermissionString
+): boolean {
+  if (permissions.has("*")) return true;
+  if (permissions.has(required)) return true;
+
+  const [resource] = required.split(":");
+  if (permissions.has(`${resource}:*` as PermissionString)) return true;
+
+  return false;
+}
+
+/* =========================================================
+   REQUIRE PERMISSION MIDDLEWARE
+========================================================= */
+
 export const requirePermission =
   (...required: PermissionString[]) =>
-  (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user)
-      return res.status(401).json({ message: "Unauthorized" });
-
-    if (req.user.isSuperAdmin) return next();
-
-    const hasAll = required.every((perm) =>
-      req.user!.permissions.includes(perm)
-    );
-
-    if (!hasAll)
-      return res
-        .status(403)
-        .json({ message: "Insufficient permissions" });
-
-    next();
-  };
-
-/* ================= REQUIRE OWNERSHIP ================= */
-export const requireOwnership =
-  (getResourceUserId: (req: Request) => Promise<string>) =>
   async (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user)
-      return res.status(401).json({ message: "Unauthorized" });
-
-    if (req.user.isSuperAdmin) return next();
-
     try {
-      const ownerId = await getResourceUserId(req);
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
 
-      if (ownerId !== req.user.id) {
-        return res.status(403).json({ message: "Forbidden" });
+      const permissions = req.user.permissions;
+
+      // 🔥 super admin shortcut
+      if (permissions.has("*")) {
+        return next();
+      }
+
+      const hasAll = required.every((perm) =>
+        hasPermission(permissions, perm)
+      );
+
+      if (!hasAll) {
+        return res.status(403).json({
+          message: "Insufficient permissions",
+        });
       }
 
       next();
-    } catch {
-      return res
-        .status(500)
-        .json({ message: "Ownership validation failed" });
+    } catch (error) {
+      console.error("Permission check error:", error);
+      return res.status(500).json({ message: "Server Error" });
     }
   };

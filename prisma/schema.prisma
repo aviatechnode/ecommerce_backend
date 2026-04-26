@@ -127,7 +127,9 @@ model RefreshToken {
   id         String   @id @default(uuid())
   token      String   @unique
   userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  csrfPrevHash String?
+
+  csrfHash   String
 
   userAgent  String?
   ipAddress  String?
@@ -135,6 +137,8 @@ model RefreshToken {
   createdAt  DateTime @default(now())
   lastUsedAt DateTime?
   expiresAt  DateTime
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 //////////////////////////////////////////////////////////
@@ -389,7 +393,7 @@ model FitmentIndex {
 
   createdAt DateTime @default(now())
 
-  @@index([make, model, year])
+  @@unique([productId, make, model, year])
 }
 
 model ProductFitment {
@@ -420,6 +424,9 @@ model Warehouse {
   routes      WarehouseRoute[]
 
   inventoryMovements InventoryMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model ProductInventory {
@@ -864,6 +871,18 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([entityType, entityId])
+}
+
+model DashboardSnapshot {
+  id String @id @default(uuid())
+
+  date DateTime @unique
+
+  totalRevenue Decimal
+  totalOrders  Int
+  totalUsers   Int
+
+  createdAt DateTime @default(now())
 }
 
 

@@ -1,13 +1,9 @@
-import { Role } from "@prisma/client";
-
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        id: string;
-        role: Role;
-      };
-      idempotencyKey?: string;
-    }
+import { AuthUser } from './../../types/auth.types';
+declare module "express-serve-static-core" {
+  interface Request {
+    user?: AuthUser;
+    idempotencyKey?: string;
   }
 }
+
+export {};

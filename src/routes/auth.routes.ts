@@ -1,27 +1,36 @@
-import { Router } from 'express';
+import { Router } from "express";
 import {
   signup,
   signin,
   verifyEmail,
   me,
-  signout // ✅ ADD THIS
-} from './../controllers/auth.controller.js';
+  signout,
+  refresh,
+} from "../controllers/auth.controller.js";
 
 import { csrfMiddleware } from "../middlewares/csrf.middleware.js";
-import { protect } from '../middlewares/auth.middleware.js';
+import { protect } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.post("/signup", csrfMiddleware, signup);
-router.post("/signin", csrfMiddleware, signin);
+/* ================= PUBLIC ================= */
+router.get("/verify-email/:token", verifyEmail);
 
-// ✅ LOGOUT (protected + CSRF)
+/* ================= AUTH ================= */
+
+// ❌ NO CSRF (no session yet)
+router.post("/signup", signup);
+router.post("/signin", signin);
+
+// ✅ CRITICAL: refresh MUST NOT use CSRF
+router.post("/refresh", refresh);
+
+/* ================= PROTECTED ================= */
+
+// logout → needs both auth + CSRF
 router.post("/signout", protect, csrfMiddleware, signout);
 
-// ✅ CURRENT USER
+// get current user → safe (no CSRF)
 router.get("/me", protect, me);
-
-// ❗ NO CSRF here (must stay public)
-router.get("/verify-email/:token", verifyEmail);
 
 export default router;

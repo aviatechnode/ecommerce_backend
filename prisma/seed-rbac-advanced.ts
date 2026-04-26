@@ -19,6 +19,7 @@ const permissionMatrix: Record<string, readonly string[]> = {
 
   product: ["create", "read", "update", "delete"],
   category: ["create", "read", "update", "delete"],
+  brand: ["create", "read", "update", "delete"], // ✅ ADDED
   review: ["create", "read", "update", "delete"],
 
   order: ["create", "read", "update", "delete"],
@@ -31,6 +32,11 @@ const permissionMatrix: Record<string, readonly string[]> = {
   coupon: ["create", "read", "update", "delete"],
 
   wishlist: ["create", "read", "delete"],
+  conversation: ["create", "read", "update", "delete"],
+  message: ["create", "read", "update", "delete"],
+  fitment: ["create", "read", "update", "delete"],
+
+  audit: ["read"],
 };
 
 /* =========================================================
@@ -55,6 +61,11 @@ const permissionGroups: Record<string, readonly string[]> = {
     "category:read",
     "category:update",
     "category:delete",
+
+    "brand:create",     // ✅ ADDED
+    "brand:read",
+    "brand:update",
+    "brand:delete",
 
     "review:read",
     "review:delete",
@@ -98,10 +109,34 @@ const permissionGroups: Record<string, readonly string[]> = {
     "role:update",
     "role:delete",
   ],
+
+  // Chat Management Group
+  CHAT_MANAGEMENT: [
+    "conversation:create",
+    "conversation:read",
+    "conversation:update",
+    "conversation:delete",
+    "message:create",
+    "message:read",
+    "message:update",
+    "message:delete",
+  ],
+
+  // Fitment Management Group
+  FITMENT_MANAGEMENT: [
+    "fitment:create",
+    "fitment:read",
+    "fitment:update",
+    "fitment:delete",
+  ],
+
+  SYSTEM_MANAGEMENT: [
+    "audit:read", // ✅ ADDED
+  ],
 };
 
 /* =========================================================
-   ROLE DEFINITIONS (FLAT STRUCTURE)
+   ROLE DEFINITIONS
 ========================================================= */
 
 type RoleDef = {
@@ -124,6 +159,11 @@ const roleDefinitions: readonly RoleDef[] = [
       "USER_MANAGEMENT",
       "PRODUCT_MANAGEMENT",
       "ORDER_MANAGEMENT",
+      "INVENTORY_MANAGEMENT",
+      "MARKETING_MANAGEMENT",
+      "SYSTEM_MANAGEMENT",
+      "CHAT_MANAGEMENT",
+      "FITMENT_MANAGEMENT",
     ],
   },
   {
@@ -138,6 +178,9 @@ const roleDefinitions: readonly RoleDef[] = [
       "wishlist:create",
       "wishlist:read",
       "wishlist:delete",
+      "conversation:create",
+      "message:create",
+      "conversation:read",
     ],
   },
 ];
@@ -223,7 +266,7 @@ async function main() {
       create: {
         name: role.name,
         description: role.description,
-        parentId: null, // 👈 ensure flat structure
+        parentId: null,
       },
     });
 

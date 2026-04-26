@@ -2,24 +2,10 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prismadb.js";
 import { Prisma, AddressType, NigerianState } from "@prisma/client";
 import { allocateVariantStock } from "../services/warehouse-allocation.service.js";
-import { calculateOrderMetrics, calculateShippingFee } from "../services/shipping.service.js";
-import type { PermissionString } from "../utils/rbac.js";
-
-/* ======================================================
-TYPES
-====================================================== */
-
-interface AuthUser {
-  id: string;
-  roleId: string;
-  permissions: PermissionString[];
-  isSuperAdmin: boolean;
-}
-
-interface AuthRequest extends Request {
-  user?: AuthUser;
-  idempotencyKey?: string;
-}
+import {
+  calculateOrderMetrics,
+  calculateShippingFee,
+} from "../services/shipping.service.js";
 
 /* ======================================================
 ORDER NUMBER GENERATOR
@@ -33,7 +19,7 @@ function generateOrderNumber() {
 CHECKOUT CONTROLLER
 ====================================================== */
 
-export const checkout = async (req: AuthRequest, res: Response) => {
+export const checkout = async (req: Request, res: Response) => {
   try {
     if (!req.user)
       return res.status(401).json({ message: "Unauthorized" });
@@ -43,9 +29,9 @@ export const checkout = async (req: AuthRequest, res: Response) => {
 
     const userId = req.user.id;
 
-    //////////////////////////////////////////////////////
+    // ======================================================
     // IDEMPOTENCY CHECK
-    //////////////////////////////////////////////////////
+    // ======================================================
 
     const existingKey = await prisma.idempotencyKey.findUnique({
       where: { key: req.idempotencyKey },
@@ -58,9 +44,9 @@ export const checkout = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    //////////////////////////////////////////////////////
+    // ======================================================
     // GET CART
-    //////////////////////////////////////////////////////
+    // ======================================================
 
     const cart = await prisma.cart.findUnique({
       where: { userId },
@@ -80,9 +66,9 @@ export const checkout = async (req: AuthRequest, res: Response) => {
     if (!cart || cart.items.length === 0)
       return res.status(400).json({ message: "Cart is empty" });
 
-    //////////////////////////////////////////////////////
+    // ======================================================
     // GET DELIVERY ADDRESS
-    //////////////////////////////////////////////////////
+    // ======================================================
 
     const address = await prisma.address.findFirst({
       where: {
@@ -97,26 +83,23 @@ export const checkout = async (req: AuthRequest, res: Response) => {
         message: "No default DELIVERY address found",
       });
 
-    //////////////////////////////////////////////////////
+    // ======================================================
     // TRANSACTION
-    //////////////////////////////////////////////////////
+    // ======================================================
 
     const result = await prisma.$transaction(async (tx) => {
-
       let subtotal = new Prisma.Decimal(0);
 
       const orderItems: Prisma.OrderItemCreateWithoutOrderInput[] = [];
 
-      ////////////////////////////////////////////////////
+      // ======================================================
       // STOCK ALLOCATION
-      ////////////////////////////////////////////////////
+      // ======================================================
 
       for (const item of cart.items) {
-
         const variant = item.variant;
 
-        if (!variant)
-          throw new Error("Variant missing");
+        if (!variant) throw new Error("Variant missing");
 
         const allocations = await allocateVariantStock(
           variant.id,
@@ -124,12 +107,7 @@ export const checkout = async (req: AuthRequest, res: Response) => {
           address.state as NigerianState
         );
 
-        //////////////////////////////////////////////////
-        // DECREMENT STOCK PER WAREHOUSE
-        //////////////////////////////////////////////////
-
         for (const alloc of allocations) {
-
           const update = await tx.productInventory.updateMany({
             where: {
               id: alloc.inventoryId,
@@ -140,23 +118,13 @@ export const checkout = async (req: AuthRequest, res: Response) => {
             },
           });
 
-          if (update.count === 0)
-            throw new Error("Stock conflict");
+          if (update.count === 0) throw new Error("Stock conflict");
         }
 
-        //////////////////////////////////////////////////
-        // PRICE CALCULATION
-        //////////////////////////////////////////////////
-
         const unitPrice = new Prisma.Decimal(variant.price);
-
         const totalPrice = unitPrice.mul(item.quantity);
 
         subtotal = subtotal.add(totalPrice);
-
-        //////////////////////////////////////////////////
-        // CREATE ORDER ITEM
-        //////////////////////////////////////////////////
 
         orderItems.push({
           variant: { connect: { id: variant.id } },
@@ -168,9 +136,9 @@ export const checkout = async (req: AuthRequest, res: Response) => {
         });
       }
 
-      ////////////////////////////////////////////////////
-      // CREATE ORDER FIRST (needed for shipping metrics)
-      ////////////////////////////////////////////////////
+      // ======================================================
+      // CREATE ORDER
+      // ======================================================
 
       const order = await tx.order.create({
         data: {
@@ -208,16 +176,14 @@ export const checkout = async (req: AuthRequest, res: Response) => {
         },
       });
 
-      ////////////////////////////////////////////////////
-      // CALCULATE SHIPPING
-      ////////////////////////////////////////////////////
+      // ======================================================
+      // SHIPPING
+      // ======================================================
 
       const metrics = await calculateOrderMetrics(order.id);
 
       const warehouse = await tx.warehouse.findFirst();
-
-      if (!warehouse)
-        throw new Error("No warehouse configured");
+      if (!warehouse) throw new Error("No warehouse configured");
 
       const shipping = await calculateShippingFee(
         warehouse.state,
@@ -225,12 +191,7 @@ export const checkout = async (req: AuthRequest, res: Response) => {
         metrics.chargeableWeight
       );
 
-      ////////////////////////////////////////////////////
-      // UPDATE ORDER WITH SHIPPING
-      ////////////////////////////////////////////////////
-
       const deliveryFee = new Prisma.Decimal(shipping.fee);
-
       const totalAmount = subtotal.add(deliveryFee);
 
       await tx.order.update({
@@ -241,9 +202,9 @@ export const checkout = async (req: AuthRequest, res: Response) => {
         },
       });
 
-      ////////////////////////////////////////////////////
-      // CREATE PAYMENT
-      ////////////////////////////////////////////////////
+      // ======================================================
+      // PAYMENT
+      // ======================================================
 
       const payment = await tx.payment.create({
         data: {
@@ -254,17 +215,17 @@ export const checkout = async (req: AuthRequest, res: Response) => {
         },
       });
 
-      ////////////////////////////////////////////////////
+      // ======================================================
       // CLEAR CART
-      ////////////////////////////////////////////////////
+      // ======================================================
 
       await tx.cartItem.deleteMany({
         where: { cartId: cart.id },
       });
 
-      ////////////////////////////////////////////////////
-      // STORE IDEMPOTENCY RESPONSE
-      ////////////////////////////////////////////////////
+      // ======================================================
+      // IDEMPOTENCY RESPONSE
+      // ======================================================
 
       await tx.idempotencyKey.create({
         data: {
@@ -277,18 +238,8 @@ export const checkout = async (req: AuthRequest, res: Response) => {
         },
       });
 
-      return {
-        order,
-        payment,
-        shipping,
-        metrics,
-      };
-
+      return { order, payment, shipping, metrics };
     });
-
-    //////////////////////////////////////////////////////
-    // RESPONSE
-    //////////////////////////////////////////////////////
 
     return res.status(201).json({
       message: "Order created successfully",
@@ -298,9 +249,7 @@ export const checkout = async (req: AuthRequest, res: Response) => {
       distanceKm: result.shipping.distance,
       metrics: result.metrics,
     });
-
   } catch (error: any) {
-
     if (error.message === "Stock conflict") {
       return res.status(409).json({
         message: "Some items are no longer available",

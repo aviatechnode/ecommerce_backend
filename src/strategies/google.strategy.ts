@@ -1,44 +1,89 @@
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { prisma } from "../lib/prismadb.js";
+import { SUPER_ADMIN_ROLE } from "../utils/rbac.js";
 
-const SERVER_URL = process.env.SERVER_URL!
+/* =========================================================
+   ENV
+========================================================= */
+
+const SERVER_URL = process.env.SERVER_URL;
+
+if (!SERVER_URL) {
+  throw new Error("SERVER_URL is not defined");
+}
+
+if (!process.env.GOOGLE_CLIENT_ID) {
+  throw new Error("GOOGLE_CLIENT_ID is not defined");
+}
+
+if (!process.env.GOOGLE_CLIENT_SECRET) {
+  throw new Error("GOOGLE_CLIENT_SECRET is not defined");
+}
+
+/* =========================================================
+   EXPRESS USER TYPE AUGMENTATION
+========================================================= */
+
+declare global {
+  namespace Express {
+    interface User {
+      id: string;
+      roleId: string;
+      roleName: string;
+      isSuperAdmin: boolean;
+    }
+  }
+}
+
+/* =========================================================
+   GOOGLE STRATEGY
+========================================================= */
+
 passport.use(
   new GoogleStrategy(
     {
-      clientID: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       callbackURL: `${SERVER_URL}/api/auth/google/callback`,
       proxy: true,
     },
     async (_accessToken, _refreshToken, profile, done) => {
       try {
-        const email = profile.emails?.[0]?.value;
-        if (!email) return done(new Error("No email from Google"), false);
+        /* ---------------- GET EMAIL ---------------- */
 
-        let user = await prisma.user.findFirst({
+        const email = profile.emails?.[0]?.value;
+
+        if (!email) {
+          return done(new Error("No email from Google"), false);
+        }
+
+        /* ---------------- FIND USER ---------------- */
+
+        let dbUser = await prisma.user.findFirst({
           where: {
-            OR: [
-              { email },
-              { googleId: profile.id },
-            ],
+            OR: [{ email }, { googleId: profile.id }],
           },
           include: { role: true },
         });
 
-        if (!user) {
+        /* ---------------- CREATE USER ---------------- */
+
+        if (!dbUser) {
           const role = await prisma.role.findUnique({
             where: { name: "CUSTOMER" },
           });
 
-          if (!role) throw new Error("Role not found");
+          if (!role) {
+            throw new Error("Default CUSTOMER role not found");
+          }
 
-          user = await prisma.user.create({
+          dbUser = await prisma.user.create({
             data: {
               email,
               name: profile.displayName,
               googleId: profile.id,
-              password: "", // safe because Google login
+              password: "", // OAuth users don't use password
               emailVerified: true,
               roleId: role.id,
             },
@@ -46,10 +91,11 @@ passport.use(
           });
         }
 
-        // Link account
-        if (!user.googleId) {
-          user = await prisma.user.update({
-            where: { id: user.id },
+        /* ---------------- LINK GOOGLE ---------------- */
+
+        if (!dbUser.googleId) {
+          dbUser = await prisma.user.update({
+            where: { id: dbUser.id },
             data: {
               googleId: profile.id,
               emailVerified: true,
@@ -58,9 +104,22 @@ passport.use(
           });
         }
 
+        /* ---------------- ROLE CHECK (FIXED) ---------------- */
+
+        const isSuperAdmin = dbUser.role.name === SUPER_ADMIN_ROLE;
+
+        /* ---------------- FINAL USER OBJECT ---------------- */
+
+        const user: Express.User = {
+          id: dbUser.id,
+          roleId: dbUser.roleId,
+          roleName: dbUser.role.name,
+          isSuperAdmin,
+        };
+
         return done(null, user);
       } catch (err) {
-        return done(err, false);
+        return done(err as Error, false);
       }
     }
   )

@@ -5,9 +5,6 @@ import { Prisma, MediaType } from "@prisma/client";
 import { createProductSchema, updateProductSchema } from "../schemas/product.schema.js";
 import { generateSlug } from "../helpers/product.helper.js";
 
-
-
-
 /* =========================================================
 CREATE PRODUCT
 ========================================================= */
@@ -21,116 +18,119 @@ export const createProduct = async (req: Request, res: Response) => {
     }
 
     const data = parsed.data;
-
     const slug = generateSlug(data.name);
 
-    /* IMAGE UPLOAD */
-
-    const imageUrls: string[] = [];
+    /* ================= IMAGE UPLOAD ================= */
+    const uploadedImages: string[] = [];
 
     if (req.files && Array.isArray(req.files)) {
       for (const file of req.files as Express.Multer.File[]) {
         const url = await uploadToCloudinary(file.buffer);
-        imageUrls.push(url);
+        uploadedImages.push(url);
       }
     }
 
-    const productId = await prisma.$transaction(async (tx) => {
-      /* PRODUCT */
-
-      const product = await tx.product.create({
-        data: {
-          name: data.name,
-          slug,
-          description: data.description ?? null,
-          brandId: data.brandId,
-          categoryId: data.categoryId,
-          oemNumber: data.oemNumber ?? null,
-        },
-      });
-
-      /* VARIANT */
-
-      const variant = await tx.productVariant.create({
-        data: {
-          productId: product.id,
-          name: data.variantName,
-          sku: data.sku,
-          price: new Prisma.Decimal(data.price),
+    /* ================= BUILD VARIANTS ================= */
+    const variants: Prisma.ProductVariantCreateWithoutProductInput[] =
+      data.variants.map((v) => {
+        const variant: Prisma.ProductVariantCreateWithoutProductInput = {
+          name: v.name,
+          sku: v.sku,
+          price: new Prisma.Decimal(v.price),
           costPrice:
-            data.costPrice !== undefined
-              ? new Prisma.Decimal(data.costPrice)
+            v.costPrice !== undefined
+              ? new Prisma.Decimal(v.costPrice)
               : null,
-          weight: data.weight ?? null,
-        },
+
+          weight: v.weight ?? null,
+          length: v.length ?? null,
+          width: v.width ?? null,
+          height: v.height ?? null,
+
+          inventories: {
+            create: v.inventories.map((inv) => ({
+              warehouseId: inv.warehouseId,
+              stock: inv.stock,
+              threshold: inv.threshold ?? null,
+            })),
+          },
+        };
+
+        if (v.attributes && v.attributes.length > 0) {
+          variant.attributes = {
+            create: v.attributes.map((a) => ({
+              valueId: a.valueId,
+            })),
+          };
+        }
+
+        return variant;
       });
 
-      /* INVENTORY */
+    /* ================= OPTIONAL ================= */
+    const specifications =
+      data.specifications?.length
+        ? {
+            create: data.specifications.map((s) => ({
+              name: s.name,
+              value: s.value,
+            })),
+          }
+        : undefined;
 
-      await tx.productInventory.create({
-        data: {
-          variantId: variant.id,
-          warehouseId: data.warehouseId,
-          stock: data.stock,
-          threshold: data.threshold ?? null,
+    const fitments =
+      data.fitments?.length
+        ? {
+            create: data.fitments.map((f) => ({
+              trimId: f.trimId,
+              notes: f.notes ?? null,
+            })),
+          }
+        : undefined;
+
+    const mediaCreate = [
+      ...(data.medias?.map((m, i) => ({
+        url: m.url,
+        type: m.type,
+        position: m.position ?? i,
+      })) ?? []),
+      ...uploadedImages.map((url, i) => ({
+        url,
+        type: MediaType.IMAGE,
+        position: i,
+      })),
+    ];
+
+    /* ================= CREATE ================= */
+    const product = await prisma.product.create({
+      data: {
+        name: data.name,
+        slug,
+        description: data.description ?? null,
+        brandId: data.brandId,
+        categoryId: data.categoryId,
+        oemNumber: data.oemNumber ?? null,
+        isActive: data.isActive ?? true,
+
+        variants: { create: variants },
+
+        ...(specifications && { specifications }),
+        ...(fitments && { productFitments: fitments }),
+
+        medias: {
+          create: mediaCreate,
         },
-      });
+      },
 
-      /* SPECIFICATIONS */
-
-      if (data.specifications?.length) {
-        await tx.productSpecification.createMany({
-          data: data.specifications.map((s) => ({
-            productId: product.id,
-            name: s.name,
-            value: s.value,
-          })),
-        });
-      }
-
-      /* VEHICLE FITMENTS */
-
-      if (data.fitments?.length) {
-        await tx.productFitment.createMany({
-          data: data.fitments.map((f) => ({
-            productId: product.id,
-            trimId: f.trimId,
-            notes: f.notes ?? null,
-          })),
-        });
-      }
-
-      /* MEDIA */
-
-      if (imageUrls.length) {
-        await tx.productMedia.createMany({
-          data: imageUrls.map((url, index) => ({
-            productId: product.id,
-            url,
-            type: MediaType.IMAGE,
-            position: index,
-          })),
-        });
-      }
-
-      return product.id;
-    });
-
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
       include: {
         brand: true,
         category: true,
         variants: {
           include: {
-            inventories: {
-              include: { warehouse: true },
-            },
+            inventories: { include: { warehouse: true } },
             attributes: {
               include: {
-                value: {
-                  include: { attribute: true },
-                },
+                value: { include: { attribute: true } },
               },
             },
           },
@@ -378,3 +378,4 @@ export const deleteProduct = async (
     return res.status(500).json({ message: "Server error" });
   }
 };
+

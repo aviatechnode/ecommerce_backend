@@ -3,19 +3,7 @@ import { prisma } from "../lib/prismadb.js";
 import { NigerianState } from "@prisma/client";
 import { addToCartSchema, updateQuantitySchema } from "../schemas/cart.schema.js";
 import { allocateVariantStock } from "../services/warehouse-allocation.service.js";
-import type { PermissionString } from "../utils/rbac.js";
 import { calculateShippingFee } from "../services/shipping.service.js";
-
-interface AuthUser {
-  id: string;
-  roleId: string;
-  permissions: PermissionString[];
-  isSuperAdmin: boolean;
-}
-
-interface AuthRequest extends Request {
-  user?: AuthUser;
-}
 
 //////////////////////////////////////////////////////////
 // CART HELPERS
@@ -101,7 +89,6 @@ async function calculateCartShipping(cartId: string, userId: string) {
   if (!address) return 0;
 
   const warehouse = await prisma.warehouse.findFirst();
-
   if (!warehouse) return 0;
 
   const metrics = calculateCartMetrics(cart.items);
@@ -119,7 +106,7 @@ async function calculateCartShipping(cartId: string, userId: string) {
 // GET CART
 //////////////////////////////////////////////////////////
 
-export const getMyCart = async (req: AuthRequest, res: Response) => {
+export const getMyCart = async (req: Request, res: Response) => {
   try {
     if (!req.user)
       return res.status(401).json({ message: "Unauthorized" });
@@ -144,7 +131,6 @@ export const getMyCart = async (req: AuthRequest, res: Response) => {
     });
 
     const totals = calculateTotals(fullCart?.items || []);
-
     const shipping = await calculateCartShipping(cart.id, req.user.id);
 
     return res.json({
@@ -160,10 +146,10 @@ export const getMyCart = async (req: AuthRequest, res: Response) => {
 };
 
 //////////////////////////////////////////////////////////
-// ADD TO CART (WITH WAREHOUSE ALLOCATION)
+// ADD TO CART
 //////////////////////////////////////////////////////////
 
-export const addToCart = async (req: AuthRequest, res: Response) => {
+export const addToCart = async (req: Request, res: Response) => {
   try {
     if (!req.user)
       return res.status(401).json({ message: "Unauthorized" });
@@ -177,9 +163,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
 
     const variant = await prisma.productVariant.findUnique({
       where: { id: variantId },
-      include: {
-        product: true,
-      },
+      include: { product: true },
     });
 
     if (!variant)
@@ -197,9 +181,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
     });
 
     if (!address)
-      return res.status(400).json({
-        message: "Delivery address required",
-      });
+      return res.status(400).json({ message: "Delivery address required" });
 
     const allocations = await allocateVariantStock(
       variantId,
@@ -210,7 +192,6 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
     const cart = await getOrCreateCart(req.user.id);
 
     const item = await prisma.$transaction(async (tx) => {
-
       const existing = await tx.cartItem.findUnique({
         where: {
           cartId_variantId: {
@@ -246,7 +227,6 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
           unitPrice: variant.price,
         },
       });
-
     });
 
     return res.status(201).json({
@@ -254,9 +234,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
       item,
       allocations,
     });
-
   } catch (error: any) {
-
     if (error.message === "Out of stock")
       return res.status(400).json({ message: "Out of stock" });
 
@@ -264,7 +242,6 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: error.message });
 
     console.error("Add To Cart Error:", error);
-
     return res.status(500).json({ message: "Server error" });
   }
 };
@@ -274,7 +251,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
 //////////////////////////////////////////////////////////
 
 export const updateCartItem = async (
-  req: AuthRequest & Request<{ id: string }>,
+  req: Request<{ id: string }>,
   res: Response
 ) => {
   try {
@@ -300,7 +277,6 @@ export const updateCartItem = async (
       return res.status(404).json({ message: "Cart item not found" });
 
     const inventory = item.variant.inventories[0];
-
     if (!inventory)
       return res.status(400).json({ message: "Inventory missing" });
 
@@ -335,7 +311,7 @@ export const updateCartItem = async (
 //////////////////////////////////////////////////////////
 
 export const removeCartItem = async (
-  req: AuthRequest & Request<{ id: string }>,
+  req: Request<{ id: string }>,
   res: Response
 ) => {
   try {
@@ -354,7 +330,6 @@ export const removeCartItem = async (
       return res.status(404).json({ message: "Cart item not found" });
 
     const inventory = item.variant.inventories[0];
-
     if (!inventory)
       return res.status(400).json({ message: "Inventory missing" });
 
@@ -380,7 +355,7 @@ export const removeCartItem = async (
 // CLEAR CART
 //////////////////////////////////////////////////////////
 
-export const clearCart = async (req: AuthRequest, res: Response) => {
+export const clearCart = async (req: Request, res: Response) => {
   try {
     if (!req.user)
       return res.status(401).json({ message: "Unauthorized" });
@@ -406,7 +381,6 @@ export const clearCart = async (req: AuthRequest, res: Response) => {
     await prisma.$transaction(async (tx) => {
       for (const item of cart.items) {
         const inventory = item.variant.inventories[0];
-
         if (!inventory) continue;
 
         await tx.productInventory.update({
@@ -422,9 +396,7 @@ export const clearCart = async (req: AuthRequest, res: Response) => {
       });
     });
 
-    return res.json({
-      message: "Cart cleared",
-    });
+    return res.json({ message: "Cart cleared" });
   } catch (error) {
     console.error("Clear Cart Error:", error);
 

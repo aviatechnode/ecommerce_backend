@@ -1,24 +1,15 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prismadb.js";
-import { createReviewSchema, updateReviewSchema } from "../schemas/product.review.schema.js";
-import type { PermissionString } from "../utils/rbac.js";
-
-interface AuthUser {
-  id: string;
-  roleId: string;
-  permissions: PermissionString[];
-  isSuperAdmin: boolean;
-}
-
-interface AuthRequest extends Request {
-  user?: AuthUser;
-}
+import {
+  createReviewSchema,
+  updateReviewSchema,
+} from "../schemas/product.review.schema.js";
 
 //////////////////////////////////////////////////////////
 // CREATE REVIEW
 //////////////////////////////////////////////////////////
 
-export const createReview = async (req: AuthRequest, res: Response) => {
+export const createReview = async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -61,7 +52,7 @@ export const createReview = async (req: AuthRequest, res: Response) => {
     }
 
     console.error(error);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -70,7 +61,7 @@ export const createReview = async (req: AuthRequest, res: Response) => {
 //////////////////////////////////////////////////////////
 
 export const updateReview = async (
-  req: AuthRequest & Request<{ id: string }>,
+  req: Request<{ id: string }>,
   res: Response
 ) => {
   try {
@@ -94,19 +85,19 @@ export const updateReview = async (
 
     const updated = await prisma.productReview.update({
       where: { id: review.id },
-      data:{
+      data: {
         rating: parsed.data.rating,
         comment: parsed.data.comment ?? null,
-      }
+      },
     });
 
-    res.json({
+    return res.json({
       message: "Review updated",
       review: updated,
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -115,7 +106,7 @@ export const updateReview = async (
 //////////////////////////////////////////////////////////
 
 export const deleteReview = async (
-  req: AuthRequest & Request<{ id: string }>,
+  req: Request<{ id: string }>,
   res: Response
 ) => {
   try {
@@ -135,12 +126,12 @@ export const deleteReview = async (
       where: { id: review.id },
     });
 
-    res.json({
+    return res.json({
       message: "Review deleted",
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -170,12 +161,10 @@ export const getProductReviews = async (
       },
     });
 
-    res.json({
-      reviews,
-    });
+    return res.json({ reviews });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -200,12 +189,12 @@ export const getProductRatingSummary = async (
       },
     });
 
-    res.json({
+    return res.json({
       averageRating: stats._avg.rating ?? 0,
       totalReviews: stats._count.rating,
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };

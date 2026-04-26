@@ -6,6 +6,11 @@ import {
   updateCategorySchema,
 } from "../schemas/category.schema.js";
 
+import {
+  generateSlug,
+  generateUniqueSlug,
+} from "../helpers/generate.slug.helper.js";
+
 //////////////////////////////////////////////////////////
 // TYPES
 //////////////////////////////////////////////////////////
@@ -36,17 +41,11 @@ export const createCategory = async (req: Request, res: Response) => {
       });
     }
 
-    const { name, slug, parentId } = parsed.data;
+    const { name, parentId } = parsed.data;
 
-    const existing = await prisma.category.findUnique({
-      where: { slug },
-    });
-
-    if (existing) {
-      return res.status(409).json({
-        message: "Slug already exists",
-      });
-    }
+    // ✅ auto generate slug
+    const baseSlug = generateSlug(name);
+    const slug = await generateUniqueSlug(baseSlug, prisma.category);
 
     if (parentId) {
       const parent = await prisma.category.findUnique({
@@ -69,9 +68,7 @@ export const createCategory = async (req: Request, res: Response) => {
       data.parent = { connect: { id: parentId } };
     }
 
-    const category = await prisma.category.create({
-      data,
-    });
+    const category = await prisma.category.create({ data });
 
     return res.status(201).json({
       message: "Category created",
@@ -185,10 +182,7 @@ export const getCategoryTree = async (_req: Request, res: Response) => {
     for (const category of map.values()) {
       if (category.parentId) {
         const parent = map.get(category.parentId);
-
-        if (parent) {
-          parent.children.push(category);
-        }
+        if (parent) parent.children.push(category);
       } else {
         tree.push(category);
       }
@@ -256,18 +250,16 @@ export const updateCategory = async (req: Request, res: Response) => {
       });
     }
 
-    const { name, slug, parentId } = parsed.data;
+    const { name, parentId } = parsed.data;
 
-    if (slug) {
-      const duplicate = await prisma.category.findUnique({
-        where: { slug },
-      });
+    const data: Prisma.CategoryUpdateInput = {};
 
-      if (duplicate && duplicate.id !== id) {
-        return res.status(409).json({
-          message: "Slug already exists",
-        });
-      }
+    // ✅ update name + regenerate slug ONLY if name changed
+    if (name && name !== existing.name) {
+      data.name = name;
+
+      const baseSlug = generateSlug(name);
+      data.slug = await generateUniqueSlug(baseSlug, prisma.category);
     }
 
     if (parentId === id) {
@@ -275,11 +267,6 @@ export const updateCategory = async (req: Request, res: Response) => {
         message: "Category cannot be its own parent",
       });
     }
-
-    const data: Prisma.CategoryUpdateInput = {};
-
-    if (name !== undefined) data.name = name;
-    if (slug !== undefined) data.slug = slug;
 
     if (parentId === null) {
       data.parent = { disconnect: true };

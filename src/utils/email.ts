@@ -16,7 +16,7 @@ const transporter = nodemailer.createTransport({
  */
 export const sendEmail = async (to: string, subject: string, html: string) => {
   await transporter.sendMail({
-    from: `"Your App" <${process.env.EMAIL_USER}>`,
+    from: `"MOgrace Autoparts" <${process.env.EMAIL_USER}>`,
     to,
     subject,
     html,

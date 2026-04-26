@@ -3,24 +3,19 @@ import passport from "passport";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.js";
 import { resolvePermissions } from "../utils/rbac.js";
 import { prisma } from "../lib/prismadb.js";
+import { createCsrfPair } from "../utils/csrf.js";
 
 const router = Router();
 
-/* =========================================================
-   STEP 1: REDIRECT TO GOOGLE
-========================================================= */
+/* ================= GOOGLE LOGIN ================= */
 router.get(
   "/google",
   passport.authenticate("google", {
     scope: ["profile", "email"],
-    session: false, // ✅ IMPORTANT (no sessions)
-    prompt: "select_account", // ✅ better UX
   })
 );
 
-/* =========================================================
-   STEP 2: GOOGLE CALLBACK
-========================================================= */
+/* ================= GOOGLE CALLBACK ================= */
 router.get(
   "/google/callback",
   passport.authenticate("google", {
@@ -35,68 +30,61 @@ router.get(
         return res.redirect(`${process.env.CLIENT_URL}/auth`);
       }
 
-      /* -----------------------------------------------------
-         🔥 IMPORTANT: Ensure role is loaded
-      ----------------------------------------------------- */
       const fullUser = await prisma.user.findUnique({
         where: { id: user.id },
-        include: {
-          role: true,
-        },
+        include: { role: true },
       });
 
-      if (!fullUser) {
+      if (!fullUser || !fullUser.role) {
         return res.redirect(`${process.env.CLIENT_URL}/auth`);
       }
 
-      /* -----------------------------------------------------
-         RESOLVE PERMISSIONS (RBAC)
-      ----------------------------------------------------- */
       const permissions = Array.from(
         await resolvePermissions(fullUser.roleId)
       );
 
-      /* -----------------------------------------------------
-         TOKENS
-      ----------------------------------------------------- */
       const payload = {
         id: fullUser.id,
         roleId: fullUser.roleId,
-        roleName: fullUser.role?.name || "CUSTOMER",
+        roleName: fullUser.role.name,
         permissions,
       };
 
       const accessToken = generateAccessToken(payload);
-      const refreshToken = generateRefreshToken(payload);
+      const refreshToken = generateRefreshToken();
 
-      /* -----------------------------------------------------
-         STORE REFRESH TOKEN (ROTATION READY)
-      ----------------------------------------------------- */
+      // ✅ USE SAME CSRF SYSTEM AS REST OF APP
+      const { rawToken, hashedToken } = createCsrfPair();
+
       await prisma.refreshToken.create({
         data: {
           token: refreshToken,
           userId: fullUser.id,
+          csrfHash: hashedToken,
+          csrfPrevHash: null,
           userAgent: req.headers["user-agent"] ?? null,
           ipAddress: req.ip ?? null,
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         },
       });
 
-      /* -----------------------------------------------------
-         SET COOKIE (SECURE)
-      ----------------------------------------------------- */
+      const isProd = process.env.NODE_ENV === "production";
+
+      // ✅ SAME COOKIE CONFIG AS OTHER AUTH ROUTES
       res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax", // ✅ FIX: "strict" can break OAuth redirects
-        path: "/api/auth", // ✅ scope cookie properly
+        secure: isProd,
+        sameSite: "strict",
+        path: "/",
       });
 
-      /* -----------------------------------------------------
-         REDIRECT TO FRONTEND
-      ----------------------------------------------------- */
+      /**
+       * ❌ DO NOT SET CSRF COOKIE
+       * ✅ SEND IT VIA URL (frontend will store it)
+       */
+
       res.redirect(
-        `${process.env.CLIENT_URL}/auth/google/callback?token=${accessToken}`
+        `${process.env.CLIENT_URL}/auth/google/callback?token=${accessToken}&csrfToken=${rawToken}`
       );
     } catch (err) {
       console.error("Google Auth Error:", err);

@@ -1,33 +1,45 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
+import crypto from "crypto";
 import type { PermissionString } from "./rbac.js";
 
-const JWT_SECRET = process.env.JWT_SECRET!;
-const REFRESH_SECRET = process.env.REFRESH_SECRET!;
+/* ================= ENV ================= */
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error("JWT_SECRET is not defined");
 
-export interface TokenPayload {
+/* ================= TYPES ================= */
+export interface AccessTokenPayload {
   id: string;
   roleId: string;
   roleName: string;
   permissions: PermissionString[];
-  type: "access" | "refresh";
+  isSuperAdmin?: boolean;
 }
 
-/* ---------------- ACCESS TOKEN ---------------- */
-export const generateAccessToken = (
-  payload: Omit<TokenPayload, "type">
-) =>
-  jwt.sign(
-    { ...payload, type: "access" },
-    JWT_SECRET,
-    { expiresIn: "15m" } as SignOptions
-  );
+/* ================= HELPERS ================= */
+function normalizePermissions(
+  permissions: PermissionString[] = []
+): PermissionString[] {
+  return Array.from(new Set(permissions));
+}
 
-/* ---------------- REFRESH TOKEN ---------------- */
-export const generateRefreshToken = (
-  payload: Omit<TokenPayload, "type">
-) =>
-  jwt.sign(
-    { ...payload, type: "refresh" },
-    REFRESH_SECRET,
-    { expiresIn: "7d" } as SignOptions
+/* ================= ACCESS TOKEN ================= */
+export const generateAccessToken = (
+  payload: AccessTokenPayload
+): string => {
+  return jwt.sign(
+    {
+      ...payload,
+      permissions: normalizePermissions(payload.permissions),
+    },
+    JWT_SECRET,
+    {
+      expiresIn: "15m",
+    } as SignOptions
   );
+};
+
+/* ================= REFRESH TOKEN ================= */
+// 🔥 NOT JWT anymore
+export const generateRefreshToken = (): string => {
+  return crypto.randomBytes(64).toString("hex");
+};
