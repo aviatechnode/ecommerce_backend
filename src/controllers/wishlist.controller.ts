@@ -26,7 +26,11 @@ export const getWishlist = async (req: AuthRequest, res: Response) => {
       include: {
         items: {
           include: {
-            product: true, // or select specific fields
+            product: {
+              include: {
+                medias: true, // ✅ REQUIRED
+              },
+            },
           },
         },
       },
@@ -38,7 +42,6 @@ export const getWishlist = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-
 //////////////////////////////////////////////////////////
 // ADD ITEM TO WISHLIST
 //////////////////////////////////////////////////////////

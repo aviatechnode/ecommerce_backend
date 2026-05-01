@@ -21,7 +21,7 @@ export const createReview = async (req: Request, res: Response) => {
       return res.status(400).json(parsed.error.format());
     }
 
-    const { productId, rating, comment } = parsed.data;
+    const { productId, rating, comment, title } = parsed.data;
 
     const product = await prisma.product.findUnique({
       where: { id: productId },
@@ -36,7 +36,9 @@ export const createReview = async (req: Request, res: Response) => {
         userId: req.user.id,
         productId,
         rating,
+        title: title ?? null,
         comment: comment ?? null,
+        // verifiedPurchase & isApproved handled internally
       },
     });
 
@@ -83,12 +85,30 @@ export const updateReview = async (
       return res.status(404).json({ message: "Review not found" });
     }
 
+    // Build update object dynamically
+    const updateData: any = {};
+
+    if (parsed.data.rating !== undefined) {
+      updateData.rating = parsed.data.rating;
+    }
+
+    if (parsed.data.comment !== undefined) {
+      updateData.comment = parsed.data.comment ?? null;
+    }
+
+    if (parsed.data.title !== undefined) {
+      updateData.title = parsed.data.title ?? null;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        message: "No valid fields to update",
+      });
+    }
+
     const updated = await prisma.productReview.update({
       where: { id: review.id },
-      data: {
-        rating: parsed.data.rating,
-        comment: parsed.data.comment ?? null,
-      },
+      data: updateData,
     });
 
     return res.json({
@@ -147,6 +167,7 @@ export const getProductReviews = async (
     const reviews = await prisma.productReview.findMany({
       where: {
         productId: req.params.productId,
+        isApproved: true, // 🔥 important for public display
       },
       include: {
         user: {
@@ -180,6 +201,7 @@ export const getProductRatingSummary = async (
     const stats = await prisma.productReview.aggregate({
       where: {
         productId: req.params.productId,
+        isApproved: true, // 🔥 match reviews filter
       },
       _avg: {
         rating: true,

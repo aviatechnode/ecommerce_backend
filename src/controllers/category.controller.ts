@@ -41,12 +41,24 @@ export const createCategory = async (req: Request, res: Response) => {
       });
     }
 
-    const { name, parentId } = parsed.data;
+    const {
+      name,
+      slug: inputSlug,
+      code,
+      type,
+      level,
+      description,
+      imageUrl,
+      sortOrder,
+      isActive,
+      parentId,
+    } = parsed.data;
 
-    // ✅ auto generate slug
-    const baseSlug = generateSlug(name);
+    // slug handling
+    const baseSlug = inputSlug || generateSlug(name);
     const slug = await generateUniqueSlug(baseSlug, prisma.category);
 
+    // validate parent
     if (parentId) {
       const parent = await prisma.category.findUnique({
         where: { id: parentId },
@@ -59,16 +71,23 @@ export const createCategory = async (req: Request, res: Response) => {
       }
     }
 
-    const data: Prisma.CategoryCreateInput = {
-      name,
-      slug,
-    };
+    const category = await prisma.category.create({
+      data: {
+        name,
+        slug,
+        code,
+        type,
+        level: level ?? 0,
+        description: description ?? null,
+        imageUrl: imageUrl ?? null,
+        sortOrder: sortOrder ?? 0,
+        isActive: isActive ?? true,
 
-    if (parentId) {
-      data.parent = { connect: { id: parentId } };
-    }
-
-    const category = await prisma.category.create({ data });
+        ...(parentId
+          ? { parent: { connect: { id: parentId } } }
+          : {}),
+      },
+    });
 
     return res.status(201).json({
       message: "Category created",
@@ -250,17 +269,36 @@ export const updateCategory = async (req: Request, res: Response) => {
       });
     }
 
-    const { name, parentId } = parsed.data;
+    const {
+      name,
+      slug,
+      code,
+      type,
+      level,
+      description,
+      imageUrl,
+      sortOrder,
+      isActive,
+      parentId,
+    } = parsed.data;
 
     const data: Prisma.CategoryUpdateInput = {};
 
-    // ✅ update name + regenerate slug ONLY if name changed
     if (name && name !== existing.name) {
       data.name = name;
 
       const baseSlug = generateSlug(name);
       data.slug = await generateUniqueSlug(baseSlug, prisma.category);
     }
+
+    if (slug) data.slug = slug;
+    if (code) data.code = code;
+    if (type) data.type = type;
+    if (level !== undefined) data.level = level;
+    if (description !== undefined) data.description = description;
+    if (imageUrl !== undefined) data.imageUrl = imageUrl;
+    if (sortOrder !== undefined) data.sortOrder = sortOrder;
+    if (isActive !== undefined) data.isActive = isActive;
 
     if (parentId === id) {
       return res.status(400).json({

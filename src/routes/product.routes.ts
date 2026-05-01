@@ -7,32 +7,44 @@ import {
   deleteProduct,
 } from "../controllers/product.controller.js";
 
-import { protect, requirePermission } from "../middlewares/auth.middleware.js";
-import { upload } from "../middlewares/upload.middleware.js";
+import {
+  protect,
+  requirePermission,
+} from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-/* ================= PUBLIC ================= */
+//////////////////////////////////////////////////////////
+// PUBLIC ROUTES
+//////////////////////////////////////////////////////////
+
+// Get all active products (with filters/search handled in controller)
 router.get("/", getProducts);
+
+// Get single product by ID
 router.get("/:id", getProduct);
 
-/* ================= PROTECTED ================= */
+//////////////////////////////////////////////////////////
+// PROTECTED ROUTES
+//////////////////////////////////////////////////////////
+
+// Create product
 router.post(
   "/",
   protect,
   requirePermission("product:create"),
-  upload.array("images", 5),
   createProduct
 );
 
-router.put(
+// Update product
+router.patch(
   "/:id",
   protect,
   requirePermission("product:update"),
-  upload.array("images", 5),
   updateProduct
 );
 
+// Soft delete product (recommended for production)
 router.delete(
   "/:id",
   protect,

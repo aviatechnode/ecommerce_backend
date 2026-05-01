@@ -1,4 +1,0 @@
--- AlterTable
-ALTER TABLE "Address" ALTER COLUMN "isDefault" DROP NOT NULL,
-ALTER COLUMN "landmark" DROP NOT NULL,
-ALTER COLUMN "postalCode" DROP NOT NULL;

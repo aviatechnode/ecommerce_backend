@@ -19,8 +19,9 @@ const permissionMatrix: Record<string, readonly string[]> = {
 
   product: ["create", "read", "update", "delete"],
   category: ["create", "read", "update", "delete"],
-  brand: ["create", "read", "update", "delete"], // ✅ ADDED
-  review: ["create", "read", "update", "delete"],
+  brand: ["create", "read", "update", "delete"],
+
+  review: ["create", "read", "update", "delete"], // ✅ FIXED FULL SET
 
   order: ["create", "read", "update", "delete"],
   payment: ["read", "update"],
@@ -62,12 +63,15 @@ const permissionGroups: Record<string, readonly string[]> = {
     "category:update",
     "category:delete",
 
-    "brand:create",     // ✅ ADDED
+    "brand:create",
     "brand:read",
     "brand:update",
     "brand:delete",
 
+    // 🔥 FIX: FULL REVIEW ACCESS FOR ADMIN
+    "review:create",
     "review:read",
+    "review:update",
     "review:delete",
   ],
 
@@ -110,7 +114,6 @@ const permissionGroups: Record<string, readonly string[]> = {
     "role:delete",
   ],
 
-  // Chat Management Group
   CHAT_MANAGEMENT: [
     "conversation:create",
     "conversation:read",
@@ -122,7 +125,6 @@ const permissionGroups: Record<string, readonly string[]> = {
     "message:delete",
   ],
 
-  // Fitment Management Group
   FITMENT_MANAGEMENT: [
     "fitment:create",
     "fitment:read",
@@ -131,7 +133,7 @@ const permissionGroups: Record<string, readonly string[]> = {
   ],
 
   SYSTEM_MANAGEMENT: [
-    "audit:read", // ✅ ADDED
+    "audit:read",
   ],
 };
 
@@ -181,21 +183,24 @@ const roleDefinitions: readonly RoleDef[] = [
       "conversation:create",
       "message:create",
       "conversation:read",
+
+      // optional but safe
+      "review:create",
+      "review:read",
     ],
   },
 ];
 
 /* =========================================================
-   MAIN
+   MAIN SEED
 ========================================================= */
 
 async function main() {
   console.log("🌱 RBAC Seeding Started...\n");
 
-  /* ---------------- 1️⃣ Permissions ---------------- */
-
   const createdPermissions = new Map<string, string>();
 
+  /* ---------------- Permissions ---------------- */
   for (const [resource, actions] of Object.entries(permissionMatrix)) {
     for (const action of actions) {
       const name = `${resource}:${action}`;
@@ -217,7 +222,7 @@ async function main() {
 
   console.log("✅ Permissions seeded");
 
-  /* ---------------- 2️⃣ Permission Groups ---------------- */
+  /* ---------------- Groups ---------------- */
 
   const createdGroups = new Map<string, string>();
 
@@ -235,7 +240,10 @@ async function main() {
 
     for (const perm of perms) {
       const permissionId = createdPermissions.get(perm);
-      if (!permissionId) throw new Error(`Permission missing: ${perm}`);
+
+      if (!permissionId) {
+        throw new Error(`Missing permission in matrix: ${perm}`);
+      }
 
       await prisma.permissionAssignment.upsert({
         where: {
@@ -255,7 +263,7 @@ async function main() {
 
   console.log("✅ Permission groups seeded");
 
-  /* ---------------- 3️⃣ Roles ---------------- */
+  /* ---------------- Roles ---------------- */
 
   const createdRoles = new Map<string, string>();
 
@@ -275,7 +283,7 @@ async function main() {
 
   console.log("✅ Roles seeded");
 
-  /* ---------------- 4️⃣ Attach Groups ---------------- */
+  /* ---------------- Attach Groups ---------------- */
 
   for (const role of roleDefinitions) {
     if (!role.groups) continue;
@@ -297,7 +305,7 @@ async function main() {
 
   console.log("✅ Groups attached");
 
-  /* ---------------- 5️⃣ Direct Permissions ---------------- */
+  /* ---------------- Direct Permissions ---------------- */
 
   for (const role of roleDefinitions) {
     if (!role.directPermissions) continue;
@@ -305,7 +313,9 @@ async function main() {
     const roleId = createdRoles.get(role.name)!;
 
     for (const perm of role.directPermissions) {
-      const permissionId = createdPermissions.get(perm)!;
+      const permissionId = createdPermissions.get(perm);
+
+      if (!permissionId) continue;
 
       await prisma.rolePermission.upsert({
         where: {
@@ -319,7 +329,7 @@ async function main() {
 
   console.log("✅ Direct permissions attached");
 
-  /* ---------------- 6️⃣ Super Admin User ---------------- */
+  /* ---------------- Super Admin ---------------- */
 
   const superAdminRoleId = createdRoles.get("SUPER_ADMIN")!;
 

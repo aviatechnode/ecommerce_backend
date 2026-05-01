@@ -1,70 +1,63 @@
-import type { Request, Response } from "express";
-import {
-  processProductFitments,
-  searchFitments,
-} from "../services/fitment.service.js";
+import type { Request, Response } from 'express';
+import { createFitment, getFitmentsByProduct, deleteFitment } from '../models/ProductFitment.js';
 
-import { fitmentSearchSchema, type FitmentSearchInput } from "../schemas/fitment.schema.js";
+export const processFitments = async (req: Request, res: Response) => {
+  const { productId } = req.params;
 
-//////////////////////////////////////////////////////////
-// HELPERS (ZOD VALIDATION)
-//////////////////////////////////////////////////////////
-
-const parseSearchQuery = (query: Request["query"]): FitmentSearchInput => {
-  const parsed = fitmentSearchSchema.safeParse(query);
-
-  if (!parsed.success) {
-    throw new Error("Invalid search query");
+  if (!productId || typeof productId !== 'string') {
+    return res.status(400).json({ success: false, message: 'Invalid productId' });
   }
 
-  // 🔥 REMOVE undefined keys (CRITICAL FIX)
-  const cleaned = Object.fromEntries(
-    Object.entries(parsed.data).filter(([_, v]) => v !== undefined)
-  ) as FitmentSearchInput;
+  const { trimId, notes } = req.body;
 
-  return cleaned;
-};
-//////////////////////////////////////////////////////////
-// PROCESS PRODUCT
-//////////////////////////////////////////////////////////
+  if (!trimId || typeof trimId !== 'string') {
+    return res.status(400).json({ success: false, message: 'Invalid trimId' });
+  }
 
-export const processFitments = async (
-  req: Request<{ productId: string }>,
-  res: Response
-) => {
   try {
-    const { productId } = req.params;
-
-    const result = await processProductFitments(productId);
-
-    return res.status(200).json(result);
+    const newFitment = await createFitment(productId, trimId, notes);
+    res.status(201).json({ success: true, data: newFitment });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      message: "Failed to process fitments",
-    });
+    const message = error instanceof Error ? error.message : 'An unknown error occurred';
+    res.status(500).json({ success: false, message });
+  }
+};
+export const searchFitmentProducts = async (req: Request, res: Response) => {
+  let { productId } = req.query;
+
+  if (!productId) {
+    return res.status(400).json({ success: false, message: 'productId is required' });
+  }
+
+  if (Array.isArray(productId)) {
+    productId = productId[0];
+  }
+
+  if (typeof productId !== 'string') {
+    return res.status(400).json({ success: false, message: 'Invalid productId' });
+  }
+
+  try {
+    const fitments = await getFitmentsByProduct(productId);
+    res.status(200).json({ success: true, data: fitments });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'An unknown error occurred';
+    res.status(500).json({ success: false, message });
   }
 };
 
-//////////////////////////////////////////////////////////
-// SEARCH
-//////////////////////////////////////////////////////////
+export const removeFitment = async (req: Request, res: Response) => {
+  const { fitmentId } = req.params;
 
-export const searchFitmentProducts = async (
-  req: Request,
-  res: Response
-) => {
+  if (!fitmentId || typeof fitmentId !== 'string') {
+    return res.status(400).json({ success: false, message: 'Invalid fitmentId' });
+  }
+
   try {
-    const input = parseSearchQuery(req.query);
-
-    const result = await searchFitments(input);
-
-    return res.status(200).json(result);
+    const deletedFitment = await deleteFitment(fitmentId);
+    res.status(200).json({ success: true, data: deletedFitment });
   } catch (error) {
-    console.error(error);
-
-    return res.status(400).json({
-      message: "Invalid search query",
-    });
+    const message = error instanceof Error ? error.message : 'An unknown error occurred';
+    res.status(500).json({ success: false, message });
   }
 };

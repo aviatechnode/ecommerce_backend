@@ -31,6 +31,13 @@ import { csrfMiddleware } from "./middlewares/csrf.middleware.js";
 import passport from "passport";
 import brandRoutes from "./routes/brand.routes.js";
 import warehouseRoutes from "./routes/warehouse.routes.js";
+import fitmentRoutes from "./routes/fitment.routes.js";
+import auditLogRoutes from "./routes/auditlog.routes.js";
+import cartRoutes from "./routes/cart.routes.js";
+import paymentRoutes from "./routes/payment.routes.js";
+import reviewRoutes from "./routes/product.review.routes.js";
+import couponRoutes from "./routes/coupon.routes.js"
+
 
 dotenv.config();
 
@@ -111,6 +118,12 @@ app.use("/api/checkout", idempotencyMiddleware, checkoutRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/brands", brandRoutes);
 app.use("/api/warehouses", warehouseRoutes);
+app.use("/api/fitments", fitmentRoutes);
+app.use("/api/audit-logs", auditLogRoutes);
+app.use("/api/cart", cartRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/coupon", couponRoutes)
 
 /* ================= WEBHOOKS ================= */
 app.use("/webhooks", webhookRoutes);

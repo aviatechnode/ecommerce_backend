@@ -151,27 +151,49 @@ export const getMyCart = async (req: Request, res: Response) => {
 
 export const addToCart = async (req: Request, res: Response) => {
   try {
-    if (!req.user)
-      return res.status(401).json({ message: "Unauthorized" });
+    if (!req.user) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
+    }
 
     const parsed = addToCartSchema.safeParse(req.body);
 
-    if (!parsed.success)
-      return res.status(400).json({ errors: parsed.error.format() });
+    if (!parsed.success) {
+      return res.status(400).json({
+        errors: parsed.error.format(),
+      });
+    }
 
     const { variantId, quantity } = parsed.data;
 
     const variant = await prisma.productVariant.findUnique({
-      where: { id: variantId },
-      include: { product: true },
+      where: {
+        id: variantId,
+      },
+      include: {
+        product: true,
+        inventories: true,
+      },
     });
 
-    if (!variant)
-      return res.status(404).json({ message: "Variant not found" });
+    if (!variant) {
+      return res.status(404).json({
+        message: "Variant not found",
+      });
+    }
 
-    if (!variant.product.isActive)
-      return res.status(400).json({ message: "Product inactive" });
+    if (!variant.product.isActive) {
+      return res.status(400).json({
+        message: "Product inactive",
+      });
+    }
 
+    /**
+     * Delivery address is OPTIONAL here.
+     * Needed mainly for smart warehouse allocation,
+     * not for basic cart operations.
+     */
     const address = await prisma.address.findFirst({
       where: {
         userId: req.user.id,
@@ -180,14 +202,40 @@ export const addToCart = async (req: Request, res: Response) => {
       },
     });
 
-    if (!address)
-      return res.status(400).json({ message: "Delivery address required" });
+    let allocations: any[] = [];
 
-    const allocations = await allocateVariantStock(
-      variantId,
-      quantity,
-      address.state as NigerianState
-    );
+    /**
+     * If user has delivery address:
+     * allocate based on nearest warehouse/state
+     */
+    if (address) {
+      allocations = await allocateVariantStock(
+        variantId,
+        quantity,
+        address.state as NigerianState
+      );
+    } else {
+      /**
+       * Fallback:
+       * allocate from first available inventory
+       */
+      const availableInventory = variant.inventories.find(
+        (inv) => inv.stock - (inv.reserved ?? 0) >= quantity
+      );
+
+      if (!availableInventory) {
+        return res.status(400).json({
+          message: "Out of stock",
+        });
+      }
+
+      allocations = [
+        {
+          inventoryId: availableInventory.id,
+          quantity,
+        },
+      ];
+    }
 
     const cart = await getOrCreateCart(req.user.id);
 
@@ -201,24 +249,39 @@ export const addToCart = async (req: Request, res: Response) => {
         },
       });
 
+      /**
+       * Reserve inventory
+       */
       for (const alloc of allocations) {
         await tx.productInventory.update({
-          where: { id: alloc.inventoryId },
+          where: {
+            id: alloc.inventoryId,
+          },
           data: {
-            reserved: { increment: alloc.quantity },
+            reserved: {
+              increment: alloc.quantity,
+            },
           },
         });
       }
 
+      /**
+       * Update existing item
+       */
       if (existing) {
         return tx.cartItem.update({
-          where: { id: existing.id },
+          where: {
+            id: existing.id,
+          },
           data: {
             quantity: existing.quantity + quantity,
           },
         });
       }
 
+      /**
+       * Create new cart item
+       */
       return tx.cartItem.create({
         data: {
           cartId: cart.id,
@@ -233,19 +296,28 @@ export const addToCart = async (req: Request, res: Response) => {
       message: "Added to cart",
       item,
       allocations,
+      addressUsed: !!address,
     });
   } catch (error: any) {
-    if (error.message === "Out of stock")
-      return res.status(400).json({ message: "Out of stock" });
+    if (error.message === "Out of stock") {
+      return res.status(400).json({
+        message: "Out of stock",
+      });
+    }
 
-    if (error.message === "Insufficient stock across warehouses")
-      return res.status(400).json({ message: error.message });
+    if (error.message === "Insufficient stock across warehouses") {
+      return res.status(400).json({
+        message: error.message,
+      });
+    }
 
     console.error("Add To Cart Error:", error);
-    return res.status(500).json({ message: "Server error" });
+
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };
-
 //////////////////////////////////////////////////////////
 // UPDATE CART ITEM
 //////////////////////////////////////////////////////////

@@ -121,6 +121,8 @@ model User {
   auditLogs AuditLog[]
   messages Message[]
   conversationParticipants ConversationParticipant[]
+
+  couponUsages CouponUsage[]
 }
 
 model RefreshToken {
@@ -190,8 +192,18 @@ model WishlistItem {
 
 model Category {
   id   String @id @default(uuid())
+
   name String
   slug String @unique
+
+  code String @unique
+  type String
+  level Int @default(0)
+  description String?
+  imageUrl String?
+  sortOrder Int @default(0)
+
+  isActive Boolean @default(true)
 
   parentId String?
   parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
@@ -204,6 +216,9 @@ model Brand {
   id   String @id @default(uuid())
   name String @unique
   slug String @unique
+  logoUrl String?
+  description String?
+  isFeatured Boolean @default(false)
 
   products Product[]
 }
@@ -217,13 +232,18 @@ model Product {
   brandId    String
   categoryId String
 
-  oemNumber String?
 
   isActive Boolean @default(true)
+  searchKeywords String?
+  isFeatured Boolean @default(false)
+  
 
   brand    Brand    @relation(fields: [brandId], references: [id])
   category Category @relation(fields: [categoryId], references: [id])
+  viewCount Int @default(0)
+  soldCount Int @default(0)
 
+  oemNumbers     ProductOEM[]
   variants       ProductVariant[]
   medias         ProductMedia[]
   specifications ProductSpecification[]
@@ -231,10 +251,16 @@ model Product {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  deletedAt DateTime?
 
   productFitments ProductFitment[]
-
   wishlistItems WishlistItem[]
+  productSearchIndexes ProductSearchIndex[]
+  
+  @@index([brandId])
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([createdAt])
 }
 
 model ProductVariant {
@@ -252,6 +278,9 @@ model ProductVariant {
 
   productId String
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  isActive Boolean @default(true)
+  compareAtPrice Decimal? @db.Decimal(12,2)
+  barcode String? @unique
 
   inventories ProductInventory[]
   attributes  VariantAttribute[]
@@ -276,6 +305,7 @@ model ProductMedia {
   position Int
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@unique([productId, position])
 }
 
 model ProductSpecification {
@@ -284,6 +314,51 @@ model ProductSpecification {
 
   name  String
   value String
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ProductOEM {
+  id String @id @default(uuid())
+
+  productId String
+  oemNumber String
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, oemNumber])
+  @@index([oemNumber])
+}
+
+model ProductReview {
+  id String @id @default(uuid())
+
+  userId    String
+  productId String
+
+  title   String?
+  rating  Int
+  comment String?
+
+  verifiedPurchase Boolean @default(false)
+  isApproved       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([productId])
+  @@index([rating])
+}
+model ProductSearchIndex {
+  id String @id @default(uuid())
+
+  productId String @unique
+
+  searchableText String
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
@@ -318,6 +393,7 @@ model VariantAttribute {
 
   variant ProductVariant @relation(fields: [variantId], references: [id])
   value   AttributeValue @relation(fields: [valueId], references: [id])
+  @@unique([variantId, valueId])
 }
 
 //////////////////////////////////////////////////////////
@@ -442,6 +518,7 @@ model ProductInventory {
 
   variant   ProductVariant @relation(fields: [variantId], references: [id])
   warehouse Warehouse      @relation(fields: [warehouseId], references: [id])
+  @@unique([variantId, warehouseId])
 }
 
 model InventoryMovement {
@@ -470,7 +547,15 @@ model StockReservation {
 
   quantity Int
 
+  status StockReservationStatus @default(RESERVED)
+
   expiresAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([variantId, warehouseId])
+  @@index([orderId])
 }
 
 model WarehouseRoute {
@@ -589,6 +674,7 @@ model Order {
   address  OrderAddress?
   payment  Payment?
   shipment Shipment?
+  discountAmount Decimal @default(0)
 
   createdAt DateTime @default(now())
 }
@@ -647,7 +733,6 @@ model OrderAddress {
 //////////////////////////////////////////////////////////
 // PAYMENTS
 //////////////////////////////////////////////////////////
-
 model Payment {
   id String @id @default(uuid())
 
@@ -662,6 +747,15 @@ model Payment {
   paidAt DateTime?
 
   order Order @relation(fields: [orderId], references: [id])
+
+  refunds Refund[]
+  transactions PaymentTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([reference])
+  @@index([status])
 }
 
 model PaymentTransaction {
@@ -672,19 +766,56 @@ model PaymentTransaction {
   eventType String
   payload   Json
 
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
+
+  @@index([paymentId])
+  @@index([eventType])
+  @@index([createdAt])
 }
 
 model Refund {
   id String @id @default(uuid())
-
   paymentId String
 
-  amount Decimal
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  amount Decimal @db.Decimal(12,2)
+
+  orderItemId String?
+  quantity Int?
+
   reason String?
 
+  status RefundStatus @default(PENDING)
+  reference String? @unique
+
+  processedAt DateTime?
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([paymentId])
+  @@index([status])
+  @@index([createdAt])
 }
+
+
+model ReturnRequest {
+  id String @id @default(uuid())
+
+  orderId String
+  userId  String
+
+  status RefundStatus @default(PENDING)
+
+  reason String?
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 
 //////////////////////////////////////////////////////////
 // SHIPPING
@@ -788,27 +919,31 @@ model Coupon {
   usageLimit Int?
   usedCount  Int @default(0)
 
+  perUserLimit Int? @default(1) 
   expiresAt DateTime?
+  isActive Boolean @default(true)
+  usages CouponUsage[]
 
   orders Order[]
 }
 
-model ProductReview {
+model CouponUsage {
   id String @id @default(uuid())
 
-  userId    String
-  productId String
+  couponId String
+  userId   String
 
-  rating  Int
-  comment String?
+  orderId String?
 
-  user    User    @relation(fields: [userId], references: [id])
-  product Product @relation(fields: [productId], references: [id])
+  usedAt DateTime @default(now())
 
-  createdAt DateTime @default(now())
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, productId])
+  @@unique([couponId, userId, orderId])
+  @@index([couponId, userId])
 }
+
 
 //////////////////////////////////////////////////////////
 // OPERATIONS
@@ -957,6 +1092,13 @@ enum ConversationRole {
   SYSTEM
 }
 
+enum CouponLogAction {
+  APPLIED
+  REJECTED
+  EXPIRED
+  LIMIT_REACHED
+  USED
+}
 
 //////////////////////////////////////////////////////////
 // ENUMS
@@ -1071,4 +1213,19 @@ enum MessageType {
   IMAGE
   FILE
   SYSTEM
+}
+
+enum StockReservationStatus {
+  RESERVED
+  CONFIRMED
+  RELEASED
+  EXPIRED
+}
+
+
+
+enum RefundStatus {
+  PENDING
+  SUCCESS
+  FAILED
 }

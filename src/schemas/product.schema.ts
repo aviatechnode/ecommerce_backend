@@ -1,90 +1,149 @@
 import { z } from "zod";
 
-/* =========================================================
-VARIANT ATTRIBUTES (Prisma uses valueId only)
-========================================================= */
-const variantAttributeSchema = z.object({
+//////////////////////////////////////////////////////////
+// ENUMS
+//////////////////////////////////////////////////////////
+
+const MediaTypeEnum = z.enum(["IMAGE", "VIDEO"]);
+
+//////////////////////////////////////////////////////////
+// ATTRIBUTE VALUE SCHEMA
+//////////////////////////////////////////////////////////
+
+const AttributeValueSchema = z.object({
+  id: z.string().uuid().optional(),
+  attributeId: z.string().uuid(),
+  value: z.string().min(1),
+});
+
+//////////////////////////////////////////////////////////
+// VARIANT ATTRIBUTE SCHEMA
+//////////////////////////////////////////////////////////
+
+const VariantAttributeSchema = z.object({
+  id: z.string().uuid().optional(),
+  variantId: z.string().uuid().optional(),
   valueId: z.string().uuid(),
+  value: AttributeValueSchema.optional(),
 });
 
-/* =========================================================
-INVENTORY (matches ProductInventory)
-========================================================= */
-const inventorySchema = z.object({
+//////////////////////////////////////////////////////////
+// PRODUCT INVENTORY SCHEMA
+//////////////////////////////////////////////////////////
+
+const ProductInventorySchema = z.object({
+  id: z.string().uuid().optional(),
+  variantId: z.string().uuid().optional(),
   warehouseId: z.string().uuid(),
-  stock: z.number().int().nonnegative(),
-  threshold: z.number().int().optional(),
+
+  stock: z.number().int().min(0),
+  reserved: z.number().int().min(0).optional(),
+  threshold: z.number().int().min(0).optional(),
 });
 
-/* =========================================================
-VARIANT (matches ProductVariant)
-========================================================= */
-const variantSchema = z.object({
+//////////////////////////////////////////////////////////
+// PRODUCT VARIANT SCHEMA
+//////////////////////////////////////////////////////////
+
+const ProductVariantSchema = z.object({
+  id: z.string().uuid().optional(),
+
   name: z.string().min(1),
-  sku: z.string(),
+  sku: z.string().min(1),
 
-  price: z.number(), // convert to Decimal in service
-  costPrice: z.number().optional(),
+  price: z.number().nonnegative(),
+  costPrice: z.number().nonnegative().optional(),
+  compareAtPrice: z.number().nonnegative().optional(),
 
-  weight: z.number().optional(),
-  length: z.number().optional(),
-  width: z.number().optional(),
-  height: z.number().optional(),
+  weight: z.number().nonnegative().optional(),
+  length: z.number().nonnegative().optional(),
+  width: z.number().nonnegative().optional(),
+  height: z.number().nonnegative().optional(),
 
-  inventories: z.array(inventorySchema).min(1),
+  barcode: z.string().optional(),
+  isActive: z.boolean().optional(),
 
-  attributes: z.array(variantAttributeSchema).optional(),
+  productId: z.string().uuid().optional(),
+
+  inventories: z.array(ProductInventorySchema).optional(),
+  attributes: z.array(VariantAttributeSchema).optional(),
 });
 
-/* =========================================================
-MEDIA (ProductMedia)
-========================================================= */
-const mediaSchema = z.object({
+//////////////////////////////////////////////////////////
+// PRODUCT MEDIA SCHEMA
+//////////////////////////////////////////////////////////
+
+const ProductMediaSchema = z.object({
+  id: z.string().uuid().optional(),
+  productId: z.string().uuid().optional(),
+
   url: z.string().url(),
-  type: z.enum(["IMAGE", "VIDEO"]),
-  position: z.number().int(),
+  type: MediaTypeEnum,
+  position: z.number().int().min(0),
 });
 
-/* =========================================================
-SPECIFICATIONS (ProductSpecification)
-========================================================= */
-const specificationSchema = z.object({
-  name: z.string(),
-  value: z.string(),
+//////////////////////////////////////////////////////////
+// PRODUCT SPECIFICATION SCHEMA
+//////////////////////////////////////////////////////////
+
+const ProductSpecificationSchema = z.object({
+  id: z.string().uuid().optional(),
+  productId: z.string().uuid().optional(),
+
+  name: z.string().min(1),
+  value: z.string().min(1),
 });
 
-/* =========================================================
-FITMENTS (ProductFitment)
-========================================================= */
-const fitmentSchema = z.object({
+//////////////////////////////////////////////////////////
+// PRODUCT OEM SCHEMA
+//////////////////////////////////////////////////////////
+
+const ProductOEMSchema = z.object({
+  id: z.string().uuid().optional(),
+  productId: z.string().uuid().optional(),
+
+  oemNumber: z.string().min(1),
+});
+
+//////////////////////////////////////////////////////////
+// PRODUCT FITMENT SCHEMA
+//////////////////////////////////////////////////////////
+
+const ProductFitmentSchema = z.object({
+  id: z.string().uuid().optional(),
+  productId: z.string().uuid().optional(),
+
   trimId: z.string().uuid(),
   notes: z.string().optional(),
 });
 
-/* =========================================================
-CREATE PRODUCT (FULL MATCH)
-========================================================= */
+//////////////////////////////////////////////////////////
+// CREATE PRODUCT SCHEMA
+//////////////////////////////////////////////////////////
+
 export const createProductSchema = z.object({
   name: z.string().min(1),
+
+  slug: z.string().optional(), // generated if not provided
   description: z.string().optional(),
 
   brandId: z.string().uuid(),
   categoryId: z.string().uuid(),
 
-  oemNumber: z.string().optional(),
+  isActive: z.boolean().optional(),
+  isFeatured: z.boolean().optional(),
 
-  isActive: z.boolean().default(true),
+  searchKeywords: z.string().optional(),
 
-  /* ✅ REQUIRED RELATIONS */
-  variants: z.array(variantSchema).min(1),
-
-  /* ✅ OPTIONAL RELATIONS */
-  medias: z.array(mediaSchema).optional(),
-  specifications: z.array(specificationSchema).optional(),
-  fitments: z.array(fitmentSchema).optional(),
+  variants: z.array(ProductVariantSchema).optional(),
+  medias: z.array(ProductMediaSchema).optional(),
+  specifications: z.array(ProductSpecificationSchema).optional(),
+  oemNumbers: z.array(ProductOEMSchema).optional(),
+  productFitments: z.array(ProductFitmentSchema).optional(),
 });
 
-/* =========================================================
-UPDATE PRODUCT
-========================================================= */
-export const updateProductSchema = createProductSchema.deepPartial();
+//////////////////////////////////////////////////////////
+// UPDATE PRODUCT SCHEMA
+//////////////////////////////////////////////////////////
+
+export const updateProductSchema = createProductSchema.partial();

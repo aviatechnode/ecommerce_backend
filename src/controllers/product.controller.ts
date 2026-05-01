@@ -1,13 +1,15 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prismadb.js";
-import { uploadToCloudinary } from "../utils/cloudinaryUpload.js";
 import { Prisma, MediaType } from "@prisma/client";
-import { createProductSchema, updateProductSchema } from "../schemas/product.schema.js";
+import {
+  createProductSchema,
+  updateProductSchema,
+} from "../schemas/product.schema.js";
 import { generateSlug } from "../helpers/product.helper.js";
 
-/* =========================================================
-CREATE PRODUCT
-========================================================= */
+//////////////////////////////////////////////////////////
+// CREATE PRODUCT
+//////////////////////////////////////////////////////////
 
 export const createProduct = async (req: Request, res: Response) => {
   try {
@@ -18,125 +20,220 @@ export const createProduct = async (req: Request, res: Response) => {
     }
 
     const data = parsed.data;
-    const slug = generateSlug(data.name);
+    const slug = data.slug || generateSlug(data.name);
 
-    /* ================= IMAGE UPLOAD ================= */
-    const uploadedImages: string[] = [];
+    const productId = await prisma.$transaction(async (tx) => {
+      //////////////////////////////////////////////////////////
+      // PRODUCT
+      //////////////////////////////////////////////////////////
 
-    if (req.files && Array.isArray(req.files)) {
-      for (const file of req.files as Express.Multer.File[]) {
-        const url = await uploadToCloudinary(file.buffer);
-        uploadedImages.push(url);
-      }
-    }
+      const product = await tx.product.create({
+        data: {
+          name: data.name,
+          slug,
+          description: data.description ?? null,
 
-    /* ================= BUILD VARIANTS ================= */
-    const variants: Prisma.ProductVariantCreateWithoutProductInput[] =
-      data.variants.map((v) => {
-        const variant: Prisma.ProductVariantCreateWithoutProductInput = {
-          name: v.name,
-          sku: v.sku,
-          price: new Prisma.Decimal(v.price),
-          costPrice:
-            v.costPrice !== undefined
-              ? new Prisma.Decimal(v.costPrice)
-              : null,
+          brandId: data.brandId,
+          categoryId: data.categoryId,
 
-          weight: v.weight ?? null,
-          length: v.length ?? null,
-          width: v.width ?? null,
-          height: v.height ?? null,
-
-          inventories: {
-            create: v.inventories.map((inv) => ({
-              warehouseId: inv.warehouseId,
-              stock: inv.stock,
-              threshold: inv.threshold ?? null,
-            })),
-          },
-        };
-
-        if (v.attributes && v.attributes.length > 0) {
-          variant.attributes = {
-            create: v.attributes.map((a) => ({
-              valueId: a.valueId,
-            })),
-          };
-        }
-
-        return variant;
+          isActive: data.isActive ?? true,
+          isFeatured: data.isFeatured ?? false,
+          searchKeywords: data.searchKeywords ?? null,
+        },
       });
 
-    /* ================= OPTIONAL ================= */
-    const specifications =
-      data.specifications?.length
-        ? {
-            create: data.specifications.map((s) => ({
-              name: s.name,
-              value: s.value,
-            })),
+      //////////////////////////////////////////////////////////
+      // OEM NUMBERS (FIXED)
+      //////////////////////////////////////////////////////////
+
+      if (data.oemNumbers?.length) {
+        await tx.productOEM.createMany({
+          data: data.oemNumbers.map((oem) => ({
+            productId: product.id,
+            oemNumber: oem.oemNumber.trim(),
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      //////////////////////////////////////////////////////////
+      // VARIANTS
+      //////////////////////////////////////////////////////////
+
+      if (data.variants?.length) {
+        for (const variantData of data.variants) {
+          const variant = await tx.productVariant.create({
+            data: {
+              productId: product.id,
+
+              name: variantData.name,
+              sku: variantData.sku,
+
+              price: new Prisma.Decimal(variantData.price),
+
+              costPrice:
+                variantData.costPrice !== undefined
+                  ? new Prisma.Decimal(variantData.costPrice)
+                  : null,
+
+              compareAtPrice:
+                variantData.compareAtPrice !== undefined
+                  ? new Prisma.Decimal(variantData.compareAtPrice)
+                  : null,
+
+              weight: variantData.weight ?? null,
+              length: variantData.length ?? null,
+              width: variantData.width ?? null,
+              height: variantData.height ?? null,
+
+              barcode: variantData.barcode ?? null,
+              isActive: variantData.isActive ?? true,
+            },
+          });
+
+          //////////////////////////////////////////////////////////
+          // INVENTORIES (SAFE GUARD ADDED)
+          //////////////////////////////////////////////////////////
+
+          if (variantData.inventories?.length) {
+            const validInventories = variantData.inventories.filter(
+              (inv) => inv.warehouseId && inv.warehouseId.length > 0
+            );
+
+            if (validInventories.length) {
+              await tx.productInventory.createMany({
+                data: validInventories.map((inv) => ({
+                  variantId: variant.id,
+                  warehouseId: inv.warehouseId,
+
+                  stock: inv.stock,
+                  reserved: inv.reserved ?? 0,
+                  threshold: inv.threshold ?? null,
+                })),
+                skipDuplicates: true,
+              });
+            }
           }
-        : undefined;
 
-    const fitments =
-      data.fitments?.length
-        ? {
-            create: data.fitments.map((f) => ({
-              trimId: f.trimId,
-              notes: f.notes ?? null,
-            })),
+          //////////////////////////////////////////////////////////
+          // ATTRIBUTES
+          //////////////////////////////////////////////////////////
+
+          if (variantData.attributes?.length) {
+            await tx.variantAttribute.createMany({
+              data: variantData.attributes.map((attr) => ({
+                variantId: variant.id,
+                valueId: attr.valueId,
+              })),
+              skipDuplicates: true,
+            });
           }
-        : undefined;
+        }
+      }
 
-    const mediaCreate = [
-      ...(data.medias?.map((m, i) => ({
-        url: m.url,
-        type: m.type,
-        position: m.position ?? i,
-      })) ?? []),
-      ...uploadedImages.map((url, i) => ({
-        url,
-        type: MediaType.IMAGE,
-        position: i,
-      })),
-    ];
+      //////////////////////////////////////////////////////////
+      // SPECIFICATIONS
+      //////////////////////////////////////////////////////////
 
-    /* ================= CREATE ================= */
-    const product = await prisma.product.create({
-      data: {
-        name: data.name,
-        slug,
-        description: data.description ?? null,
-        brandId: data.brandId,
-        categoryId: data.categoryId,
-        oemNumber: data.oemNumber ?? null,
-        isActive: data.isActive ?? true,
+      if (data.specifications?.length) {
+        await tx.productSpecification.createMany({
+          data: data.specifications.map((spec) => ({
+            productId: product.id,
+            name: spec.name,
+            value: spec.value,
+          })),
+          skipDuplicates: true,
+        });
+      }
 
-        variants: { create: variants },
+      //////////////////////////////////////////////////////////
+      // FITMENTS
+      //////////////////////////////////////////////////////////
 
-        ...(specifications && { specifications }),
-        ...(fitments && { productFitments: fitments }),
+      if (data.productFitments?.length) {
+        await tx.productFitment.createMany({
+          data: data.productFitments.map((fitment) => ({
+            productId: product.id,
+            trimId: fitment.trimId,
+            notes: fitment.notes ?? null,
+          })),
+          skipDuplicates: true,
+        });
+      }
 
-        medias: {
-          create: mediaCreate,
+      //////////////////////////////////////////////////////////
+      // MEDIA
+      //////////////////////////////////////////////////////////
+
+      if (data.medias?.length) {
+        await tx.productMedia.createMany({
+          data: data.medias.map((media) => ({
+            productId: product.id,
+            url: media.url,
+            type: media.type as MediaType,
+            position: media.position,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      //////////////////////////////////////////////////////////
+      // SEARCH INDEX
+      //////////////////////////////////////////////////////////
+
+      const searchableText = [
+        data.name,
+        data.description,
+        data.searchKeywords,
+        ...(data.oemNumbers?.map((o) => o.oemNumber) || []),
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      await tx.productSearchIndex.create({
+        data: {
+          productId: product.id,
+          searchableText,
         },
-      },
+      });
 
+      return product.id;
+    });
+
+    //////////////////////////////////////////////////////////
+    // RETURN CREATED PRODUCT
+    //////////////////////////////////////////////////////////
+
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
       include: {
         brand: true,
         category: true,
+        oemNumbers: true,
+
         variants: {
           include: {
-            inventories: { include: { warehouse: true } },
+            inventories: {
+              include: {
+                warehouse: true,
+              },
+            },
             attributes: {
               include: {
-                value: { include: { attribute: true } },
+                value: {
+                  include: {
+                    attribute: true,
+                  },
+                },
               },
             },
           },
         },
+
         medias: true,
         specifications: true,
+        productFitments: true,
+        productSearchIndexes: true,
       },
     });
 
@@ -146,42 +243,69 @@ export const createProduct = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Create Product Error:", error);
-    return res.status(500).json({ message: "Server error" });
+
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };
-
-/* =========================================================
-GET PRODUCTS
-========================================================= */
+//////////////////////////////////////////////////////////
+// GET ALL PRODUCTS
+//////////////////////////////////////////////////////////
 
 export const getProducts = async (_req: Request, res: Response) => {
   try {
     const products = await prisma.product.findMany({
+      where: {
+        deletedAt: null,
+      },
+
       include: {
         brand: true,
         category: true,
+        oemNumbers: true,
+
         variants: {
           include: {
             inventories: {
-              include: { warehouse: true },
+              include: {
+                warehouse: true,
+              },
+            },
+            attributes: {
+              include: {
+                value: {
+                  include: {
+                    attribute: true,
+                  },
+                },
+              },
             },
           },
         },
+
         medias: true,
+        specifications: true,
+        productFitments: true,
       },
-      orderBy: { createdAt: "desc" },
+
+      orderBy: {
+        createdAt: "desc",
+      },
     });
 
     return res.json({ products });
   } catch (error) {
     console.error("Get Products Error:", error);
-    return res.status(500).json({ message: "Server error" });
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };
 
-/* =========================================================
-GET SINGLE PRODUCT
-========================================================= */
+//////////////////////////////////////////////////////////
+// GET SINGLE PRODUCT
+//////////////////////////////////////////////////////////
 
 export const getProduct = async (
   req: Request<{ id: string }>,
@@ -190,118 +314,75 @@ export const getProduct = async (
   try {
     const { id } = req.params;
 
-    const product = await prisma.product.findUnique({
-      where: { id },
+    const product = await prisma.product.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+      },
+
       include: {
         brand: true,
         category: true,
+        oemNumbers: true,
+
         variants: {
           include: {
             inventories: {
-              include: { warehouse: true },
+              include: {
+                warehouse: true,
+              },
             },
             attributes: {
               include: {
                 value: {
-                  include: { attribute: true },
+                  include: {
+                    attribute: true,
+                  },
                 },
               },
             },
           },
         },
+
         medias: true,
         specifications: true,
-        reviews: true,
-        productFitments: {
-        include: {
-          trim: {
-            include: {
-              engine: {
-                include: {
-                  generation: {
-                    include: {
-                      model: {
-                        include: {
-                          make: true
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+        productFitments: true,
+
+        reviews: {
+          where: {
+            isApproved: true,
+          },
+        },
       },
     });
 
     if (!product) {
-      return res.status(404).json({ message: "Product not found" });
+      return res.status(404).json({
+        message: "Product not found",
+      });
     }
+
+    await prisma.product.update({
+      where: { id },
+      data: {
+        viewCount: {
+          increment: 1,
+        },
+      },
+    });
 
     return res.json({ product });
   } catch (error) {
     console.error("Get Product Error:", error);
-    return res.status(500).json({ message: "Server error" });
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };
 
-/* =========================================================
-GET PRODUCTS BY VEHICLE
-========================================================= */
-
-export const getProductsByVehicle = async (req: Request, res: Response) => {
-  const { make, model, year } = req.query;
-
-  const products = await prisma.product.findMany({
-    where: {
-      productFitments: {
-        some: {
-          trim: {
-            engine: {
-              generation: {
-                yearStart: { lte: Number(year) },
-                OR: [
-                  { yearEnd: null },
-                  { yearEnd: { gte: Number(year) } }
-                ],
-                model: {
-                  name: String(model),
-                  make: {
-                    name: String(make)
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    include: {
-      medias: true,
-      brand: true
-    }
-  });
-
-  res.json({ products });
-};
-
-/* =========================================================
-GET VEHICLE MAKE
-========================================================= */
-
-export const getVehicleMakes = async (_req: Request, res: Response) => {
-  const makes = await prisma.vehicleMake.findMany({
-    orderBy: { name: "asc" },
-  });
-
-  res.json({ makes });
-};
-
-/* =========================================================
-UPDATE PRODUCT
-========================================================= */
+//////////////////////////////////////////////////////////
+// UPDATE PRODUCT
+//////////////////////////////////////////////////////////
 
 export const updateProduct = async (
   req: Request<{ id: string }>,
@@ -322,19 +403,40 @@ export const updateProduct = async (
 
     if (data.name !== undefined) {
       updateData.name = data.name;
-      updateData.slug = generateSlug(data.name);
+      updateData.slug = data.slug || generateSlug(data.name);
     }
 
-    if (data.description !== undefined)
+    if (data.description !== undefined) {
       updateData.description = data.description ?? null;
+    }
 
-    if (data.brandId !== undefined) updateData.brand = { connect: { id: data.brandId } };
+    if (data.brandId !== undefined) {
+      updateData.brand = {
+        connect: {
+          id: data.brandId,
+        },
+      };
+    }
 
-    if (data.categoryId !== undefined)
-      updateData.category = { connect: { id: data.categoryId } };
+    if (data.categoryId !== undefined) {
+      updateData.category = {
+        connect: {
+          id: data.categoryId,
+        },
+      };
+    }
 
-    if (data.oemNumber !== undefined)
-      updateData.oemNumber = data.oemNumber ?? null;
+    if (data.isActive !== undefined) {
+      updateData.isActive = data.isActive;
+    }
+
+    if (data.isFeatured !== undefined) {
+      updateData.isFeatured = data.isFeatured;
+    }
+
+    if (data.searchKeywords !== undefined) {
+      updateData.searchKeywords = data.searchKeywords ?? null;
+    }
 
     const product = await prisma.product.update({
       where: { id },
@@ -347,35 +449,52 @@ export const updateProduct = async (
     });
   } catch (error: any) {
     if (error.code === "P2025") {
-      return res.status(404).json({ message: "Product not found" });
+      return res.status(404).json({
+        message: "Product not found",
+      });
     }
 
     console.error("Update Product Error:", error);
-    return res.status(500).json({ message: "Server error" });
+
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };
 
-/* =========================================================
-DELETE PRODUCT
-========================================================= */
+//////////////////////////////////////////////////////////
+// DELETE PRODUCT (SOFT DELETE)
+//////////////////////////////////////////////////////////
 
 export const deleteProduct = async (
   req: Request<{ id: string }>,
   res: Response
 ) => {
   try {
-    await prisma.product.delete({
-      where: { id: req.params.id },
+    await prisma.product.update({
+      where: {
+        id: req.params.id,
+      },
+      data: {
+        deletedAt: new Date(),
+        isActive: false,
+      },
     });
 
-    return res.json({ message: "Product deleted" });
+    return res.json({
+      message: "Product deleted successfully",
+    });
   } catch (error: any) {
     if (error.code === "P2025") {
-      return res.status(404).json({ message: "Product not found" });
+      return res.status(404).json({
+        message: "Product not found",
+      });
     }
 
     console.error("Delete Product Error:", error);
-    return res.status(500).json({ message: "Server error" });
+
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };
-

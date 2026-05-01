@@ -1,45 +1,35 @@
 import type { Request, Response } from "express";
-import { z } from "zod";
 import { prisma } from "../lib/prismadb.js";
-import { AddressType, NigerianState, Prisma } from "@prisma/client";
+import {
+  createAddressSchema,
+  updateAddressSchema,
+} from "../schemas/address.schema.js";
+import { normalizePhone } from "../utils/phone.utils.js";
+
 
 /* =========================================================
-   ZOD SCHEMAS
+CREATE ADDRESS
 ========================================================= */
 
-const createAddressSchema = z.object({
-  type: z.nativeEnum(AddressType),
-  street: z.string().min(2),
-  city: z.string().min(2),
-  state: z.nativeEnum(NigerianState),
-  lga: z.string().min(2),
-  landmark: z.string().optional(),
-  postalCode: z.string().optional(),
-  phone: z.string().min(7),
-  isDefault: z.boolean().optional(),
-});
-
-const updateAddressSchema = createAddressSchema.partial();
-
-/* =========================================================
-   CREATE ADDRESS
-========================================================= */
-
-export const createAddress = async (
-  req: Request,
-  res: Response
-) => {
+export const createAddress = async (req: Request, res: Response) => {
   try {
-    if (!req.user)
+    if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
+    }
 
     const parsed = createAddressSchema.safeParse(req.body);
-    if (!parsed.success)
-      return res.status(400).json({ errors: parsed.error.format() });
+
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Invalid address data",
+        errors: parsed.error.flatten(),
+      });
+    }
 
     const data = parsed.data;
 
     const address = await prisma.$transaction(async (tx) => {
+      // ensure only one default per type
       if (data.isDefault) {
         await tx.address.updateMany({
           where: {
@@ -60,7 +50,8 @@ export const createAddress = async (
           lga: data.lga,
           landmark: data.landmark ?? null,
           postalCode: data.postalCode ?? null,
-          phone: data.phone,
+          phone: normalizePhone(data.phone),
+          country: data.country ?? "Nigeria",
           isDefault: data.isDefault ?? false,
         },
       });
@@ -70,38 +61,45 @@ export const createAddress = async (
       message: "Address created successfully",
       address,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Create Address Error:", error);
-    return res.status(500).json({ message: "Server error" });
+
+    return res.status(400).json({
+      message: error.message || "Failed to create address",
+    });
   }
 };
 
 /* =========================================================
-   GET MY ADDRESSES
+GET MY ADDRESSES
 ========================================================= */
 
-export const getMyAddresses = async (
-  req: Request,
-  res: Response
-) => {
+export const getMyAddresses = async (req: Request, res: Response) => {
   try {
-    if (!req.user)
+    if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
+    }
 
     const addresses = await prisma.address.findMany({
       where: { userId: req.user.id },
-      orderBy: { createdAt: "desc" },
+      orderBy: [
+        { isDefault: "desc" },
+        { createdAt: "desc" },
+      ],
     });
 
     return res.json({ addresses });
   } catch (error) {
     console.error("Get Addresses Error:", error);
-    return res.status(500).json({ message: "Server error" });
+
+    return res.status(500).json({
+      message: "Failed to fetch addresses",
+    });
   }
 };
 
 /* =========================================================
-   GET SINGLE ADDRESS
+GET SINGLE ADDRESS
 ========================================================= */
 
 export const getAddress = async (
@@ -109,28 +107,35 @@ export const getAddress = async (
   res: Response
 ) => {
   try {
-    if (!req.user)
+    if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
+    }
 
     const { id } = req.params;
 
-    const address = await prisma.address.findUnique({
-      where: { id },
+    const address = await prisma.address.findFirst({
+      where: {
+        id,
+        userId: req.user.id,
+      },
     });
 
-    if (!address || address.userId !== req.user.id) {
+    if (!address) {
       return res.status(404).json({ message: "Address not found" });
     }
 
     return res.json({ address });
   } catch (error) {
     console.error("Get Address Error:", error);
-    return res.status(500).json({ message: "Server error" });
+
+    return res.status(500).json({
+      message: "Failed to fetch address",
+    });
   }
 };
 
 /* =========================================================
-   UPDATE ADDRESS
+UPDATE ADDRESS
 ========================================================= */
 
 export const updateAddress = async (
@@ -138,39 +143,37 @@ export const updateAddress = async (
   res: Response
 ) => {
   try {
-    if (!req.user)
+    if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
+    }
 
     const { id } = req.params;
 
     const parsed = updateAddressSchema.safeParse(req.body);
-    if (!parsed.success)
-      return res.status(400).json({ errors: parsed.error.format() });
 
-    const existing = await prisma.address.findUnique({
-      where: { id },
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Invalid address data",
+        errors: parsed.error.flatten(),
+      });
+    }
+
+    const existing = await prisma.address.findFirst({
+      where: {
+        id,
+        userId: req.user.id,
+      },
     });
 
-    if (!existing || existing.userId !== req.user.id) {
+    if (!existing) {
       return res.status(404).json({ message: "Address not found" });
     }
 
     const data = parsed.data;
 
-    const updateData: Prisma.AddressUpdateInput = {};
-
-    if (data.street !== undefined) updateData.street = data.street;
-    if (data.city !== undefined) updateData.city = data.city;
-    if (data.state !== undefined) updateData.state = data.state;
-    if (data.lga !== undefined) updateData.lga = data.lga;
-    if (data.landmark !== undefined)
-      updateData.landmark = data.landmark ?? null;
-    if (data.postalCode !== undefined)
-      updateData.postalCode = data.postalCode ?? null;
-    if (data.phone !== undefined) updateData.phone = data.phone;
-
     const address = await prisma.$transaction(async (tx) => {
-      if (data.isDefault) {
+      // handle default switch
+      if (data.isDefault === true) {
         await tx.address.updateMany({
           where: {
             userId: req.user!.id,
@@ -183,7 +186,22 @@ export const updateAddress = async (
       return tx.address.update({
         where: { id },
         data: {
-          ...updateData,
+          ...(data.street !== undefined && { street: data.street }),
+          ...(data.city !== undefined && { city: data.city }),
+          ...(data.state !== undefined && { state: data.state }),
+          ...(data.lga !== undefined && { lga: data.lga }),
+          ...(data.landmark !== undefined && {
+            landmark: data.landmark ?? null,
+          }),
+          ...(data.postalCode !== undefined && {
+            postalCode: data.postalCode ?? null,
+          }),
+          ...(data.phone !== undefined && {
+            phone: normalizePhone(data.phone),
+          }),
+          ...(data.country !== undefined && {
+            country: data.country,
+          }),
           ...(data.isDefault !== undefined && {
             isDefault: data.isDefault,
           }),
@@ -195,14 +213,17 @@ export const updateAddress = async (
       message: "Address updated successfully",
       address,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Update Address Error:", error);
-    return res.status(500).json({ message: "Server error" });
+
+    return res.status(400).json({
+      message: error.message || "Failed to update address",
+    });
   }
 };
 
 /* =========================================================
-   DELETE ADDRESS
+DELETE ADDRESS
 ========================================================= */
 
 export const deleteAddress = async (
@@ -210,16 +231,20 @@ export const deleteAddress = async (
   res: Response
 ) => {
   try {
-    if (!req.user)
+    if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
+    }
 
     const { id } = req.params;
 
-    const existing = await prisma.address.findUnique({
-      where: { id },
+    const existing = await prisma.address.findFirst({
+      where: {
+        id,
+        userId: req.user.id,
+      },
     });
 
-    if (!existing || existing.userId !== req.user.id) {
+    if (!existing) {
       return res.status(404).json({ message: "Address not found" });
     }
 
@@ -230,12 +255,15 @@ export const deleteAddress = async (
     return res.json({ message: "Address deleted" });
   } catch (error) {
     console.error("Delete Address Error:", error);
-    return res.status(500).json({ message: "Server error" });
+
+    return res.status(500).json({
+      message: "Failed to delete address",
+    });
   }
 };
 
 /* =========================================================
-   SET DEFAULT ADDRESS
+SET DEFAULT ADDRESS
 ========================================================= */
 
 export const setDefaultAddress = async (
@@ -243,16 +271,20 @@ export const setDefaultAddress = async (
   res: Response
 ) => {
   try {
-    if (!req.user)
+    if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
+    }
 
     const { id } = req.params;
 
-    const address = await prisma.address.findUnique({
-      where: { id },
+    const address = await prisma.address.findFirst({
+      where: {
+        id,
+        userId: req.user.id,
+      },
     });
 
-    if (!address || address.userId !== req.user.id) {
+    if (!address) {
       return res.status(404).json({ message: "Address not found" });
     }
 
@@ -270,9 +302,14 @@ export const setDefaultAddress = async (
       }),
     ]);
 
-    return res.json({ message: "Default address updated" });
+    return res.json({
+      message: "Default address updated",
+    });
   } catch (error) {
     console.error("Set Default Error:", error);
-    return res.status(500).json({ message: "Server error" });
+
+    return res.status(500).json({
+      message: "Failed to set default address",
+    });
   }
 };
