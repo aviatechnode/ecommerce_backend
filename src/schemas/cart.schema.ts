@@ -1,13 +1,21 @@
-import z from "zod";
+import { z } from "zod";
 
 const addToCartSchema = z.object({
-  variantId: z.string().uuid(),
-  quantity: z.number().int().min(1),
+  variantId: z
+    .string()
+    .uuid("Valid product variant ID is required"),
+
+  quantity: z
+    .number()
+    .int("Quantity must be a whole number")
+    .min(1, "Quantity must be at least 1"),
 });
 
 const updateQuantitySchema = z.object({
-  quantity: z.number().int().min(1),
+  quantity: z
+    .number()
+    .int("Quantity must be a whole number")
+    .min(1, "Quantity must be at least 1"),
 });
 
-
-export {addToCartSchema, updateQuantitySchema}
+export { addToCartSchema, updateQuantitySchema };

@@ -21,7 +21,7 @@ const permissionMatrix: Record<string, readonly string[]> = {
   category: ["create", "read", "update", "delete"],
   brand: ["create", "read", "update", "delete"],
 
-  review: ["create", "read", "update", "delete"], // ✅ FIXED FULL SET
+  review: ["create", "read", "update", "delete"], 
 
   order: ["create", "read", "update", "delete"],
   payment: ["read", "update"],
@@ -36,6 +36,8 @@ const permissionMatrix: Record<string, readonly string[]> = {
   conversation: ["create", "read", "update", "delete"],
   message: ["create", "read", "update", "delete"],
   fitment: ["create", "read", "update", "delete"],
+
+  address: ["create", "read", "update", "delete"],
 
   audit: ["read"],
 };
@@ -184,9 +186,13 @@ const roleDefinitions: readonly RoleDef[] = [
       "message:create",
       "conversation:read",
 
-      // optional but safe
       "review:create",
       "review:read",
+
+      "address:create",
+      "address:read",
+      "address:update",
+      "address:delete",
     ],
   },
 ];

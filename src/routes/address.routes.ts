@@ -11,14 +11,22 @@ router.use(protect);
 ROUTES
 ========================================================= */
 
+// CREATE
 router.post("/", addressController.createAddress);
 
+// GET ALL (FIX ADDED)
+router.get("/", addressController.getMyAddresses);
+
+// GET ONE
 router.get("/:id", validateIdParam, addressController.getAddress);
 
+// UPDATE
 router.patch("/:id", validateIdParam, addressController.updateAddress);
 
+// DELETE
 router.delete("/:id", validateIdParam, addressController.deleteAddress);
 
+// SET DEFAULT
 router.patch(
   "/:id/default",
   validateIdParam,

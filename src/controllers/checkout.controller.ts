@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prismadb.js";
-import { Prisma, AddressType, NigerianState } from "@prisma/client";
+import { Prisma, NigerianState } from "@prisma/client";
 import { checkoutSchema } from "../schemas/checkout.schema.js";
 import { createAddressSchema } from "../schemas/address.schema.js";
 
@@ -14,6 +14,7 @@ import { normalizePhone } from "../utils/phone.utils.js";
 /* ======================================================
 ORDER NUMBER GENERATOR
 ====================================================== */
+
 function generateOrderNumber() {
   return `ORD-${Date.now()}`;
 }
@@ -21,7 +22,14 @@ function generateOrderNumber() {
 const RESERVATION_TTL_MINUTES = 15;
 
 /* ======================================================
-CHECKOUT CONTROLLER (FINAL - STOCK SAFE + COUPON SAFE)
+HELPER
+====================================================== */
+
+const buildFullAddress = (a: any) =>
+  `${a.street}, ${a.city}, ${a.lga}, ${a.state}`;
+
+/* ======================================================
+CHECKOUT CONTROLLER
 ====================================================== */
 
 export const checkout = async (req: Request, res: Response) => {
@@ -52,6 +60,7 @@ export const checkout = async (req: Request, res: Response) => {
       /* ======================================================
       IDEMPOTENCY
       ====================================================== */
+
       const existingKey = await tx.idempotencyKey.findUnique({
         where: { key: req.idempotencyKey! },
       });
@@ -66,6 +75,7 @@ export const checkout = async (req: Request, res: Response) => {
       /* ======================================================
       CART
       ====================================================== */
+
       const cart = await tx.cart.findUnique({
         where: { userId },
         include: {
@@ -84,9 +94,10 @@ export const checkout = async (req: Request, res: Response) => {
       }
 
       /* ======================================================
-      ADDRESS
+      ADDRESS RESOLUTION (FIXED)
       ====================================================== */
-      let resolvedAddress;
+
+      let resolvedAddress: any;
 
       if (addressId) {
         resolvedAddress = await tx.address.findFirst({
@@ -101,28 +112,27 @@ export const checkout = async (req: Request, res: Response) => {
           throw new Error("Invalid address data");
         }
 
+        const addr = parsedAddress.data;
+
         resolvedAddress = await tx.address.create({
           data: {
             userId,
-            type: parsedAddress.data.type ?? AddressType.DELIVERY,
-            street: parsedAddress.data.street,
-            city: parsedAddress.data.city,
-            state: parsedAddress.data.state,
-            lga: parsedAddress.data.lga,
-            phone: normalizePhone(parsedAddress.data.phone),
-            country: parsedAddress.data.country ?? "Nigeria",
-            landmark: parsedAddress.data.landmark ?? null,
-            postalCode: parsedAddress.data.postalCode ?? null,
+            name: addr.name,
+            phone: normalizePhone(addr.phone),
+            state: addr.state,
+            lga: addr.lga,
+            city: addr.city,
+            area: addr.area ?? null,
+            street: addr.street,
+            landmark: addr.landmark ?? null,
             isDefault: false,
+            fullAddress: buildFullAddress(addr), // ✅ FIXED
           },
         });
       } else {
         resolvedAddress = await tx.address.findFirst({
-          where: {
-            userId,
-            type: AddressType.DELIVERY,
-            isDefault: true,
-          },
+          where: { userId, isDefault: true },
+          orderBy: { createdAt: "desc" },
         });
 
         if (!resolvedAddress) {
@@ -139,13 +149,15 @@ export const checkout = async (req: Request, res: Response) => {
       }
 
       /* ======================================================
-      STOCK RESERVATION + SUBTOTAL
+      STOCK + SUBTOTAL
       ====================================================== */
+
       let subtotal = new Prisma.Decimal(0);
       const orderItems: Prisma.OrderItemCreateWithoutOrderInput[] = [];
 
       for (const item of cart.items) {
         const variant = item.variant;
+
         if (!variant) throw new Error("Variant missing");
 
         const allocations = await allocateVariantStock(
@@ -155,7 +167,6 @@ export const checkout = async (req: Request, res: Response) => {
         );
 
         for (const alloc of allocations) {
-          // 🔐 LOCK STOCK (increase reserved, NOT decrement stock)
           const updated = await tx.productInventory.updateMany({
             where: {
               id: alloc.inventoryId,
@@ -166,11 +177,8 @@ export const checkout = async (req: Request, res: Response) => {
             },
           });
 
-          if (updated.count === 0) {
-            throw new Error("Stock conflict");
-          }
+          if (updated.count === 0) throw new Error("Stock conflict");
 
-          // 🧾 CREATE RESERVATION
           await tx.stockReservation.create({
             data: {
               variantId: variant.id,
@@ -184,6 +192,7 @@ export const checkout = async (req: Request, res: Response) => {
         }
 
         const price = new Prisma.Decimal(variant.price);
+
         subtotal = subtotal.add(price.mul(item.quantity));
 
         orderItems.push({
@@ -199,6 +208,7 @@ export const checkout = async (req: Request, res: Response) => {
       /* ======================================================
       COUPON
       ====================================================== */
+
       let discount = new Prisma.Decimal(0);
       let appliedCouponId: string | null = null;
 
@@ -207,29 +217,19 @@ export const checkout = async (req: Request, res: Response) => {
           where: { code: couponCode.toUpperCase() },
         });
 
-        if (!coupon || !coupon.isActive) {
-          throw new Error("Invalid coupon");
-        }
-
-        if (coupon.expiresAt && coupon.expiresAt < new Date()) {
+        if (!coupon || !coupon.isActive) throw new Error("Invalid coupon");
+        if (coupon.expiresAt && coupon.expiresAt < new Date())
           throw new Error("Coupon expired");
-        }
 
-        if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
+        if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit)
           throw new Error("Coupon limit reached");
-        }
 
-        // ✅ PER USER LIMIT
         const usageCount = await tx.couponUsage.count({
-          where: {
-            couponId: coupon.id,
-            userId,
-          },
+          where: { couponId: coupon.id, userId },
         });
 
-        if (coupon.perUserLimit && usageCount >= coupon.perUserLimit) {
-          throw new Error("Coupon usage limit reached for this user");
-        }
+        if (coupon.perUserLimit && usageCount >= coupon.perUserLimit)
+          throw new Error("Coupon usage limit reached");
 
         if (coupon.minOrder && subtotal.lt(coupon.minOrder)) {
           throw new Error(`Minimum order is ${coupon.minOrder}`);
@@ -242,22 +242,10 @@ export const checkout = async (req: Request, res: Response) => {
 
         if (discount.gt(subtotal)) discount = subtotal;
 
-        const updated = await tx.coupon.updateMany({
-          where: {
-            id: coupon.id,
-            OR: [
-              { usageLimit: null },
-              { usageLimit: { gt: coupon.usedCount } },
-            ],
-          },
-          data: {
-            usedCount: { increment: 1 },
-          },
+        await tx.coupon.update({
+          where: { id: coupon.id },
+          data: { usedCount: { increment: 1 } },
         });
-
-        if (updated.count === 0) {
-          throw new Error("Coupon exhausted");
-        }
 
         appliedCouponId = coupon.id;
       }
@@ -265,6 +253,7 @@ export const checkout = async (req: Request, res: Response) => {
       /* ======================================================
       CREATE ORDER
       ====================================================== */
+
       const order = await tx.order.create({
         data: {
           orderNumber: generateOrderNumber(),
@@ -277,51 +266,45 @@ export const checkout = async (req: Request, res: Response) => {
           totalAmount: subtotal.sub(discount),
           currency: "NGN",
           couponId: appliedCouponId,
+
           items: { create: orderItems },
+
           address: {
             create: {
-              name: req.user.name ?? "Customer",
+              name: resolvedAddress.name,
               phone: resolvedAddress.phone,
-              street: resolvedAddress.street,
-              city: resolvedAddress.city,
               state: resolvedAddress.state,
               lga: resolvedAddress.lga,
-              country: resolvedAddress.country,
+              city: resolvedAddress.city,
+              area: resolvedAddress.area ?? null,
+              street: resolvedAddress.street,
+              landmark: resolvedAddress.landmark ?? null,
+              fullAddress: resolvedAddress.fullAddress,
             },
           },
         },
-        include: { items: true, address: true },
+        include: {
+          items: true,
+          address: true,
+        },
       });
 
       /* ======================================================
-      ATTACH RESERVATIONS TO ORDER
+      RESERVATIONS LINK
       ====================================================== */
+
       await tx.stockReservation.updateMany({
         where: {
           orderId: null,
-          variantId: { in: cart.items.map(i => i.variantId) },
+          variantId: { in: cart.items.map((i) => i.variantId) },
         },
-        data: {
-          orderId: order.id,
-        },
+        data: { orderId: order.id },
       });
-
-      /* ======================================================
-      COUPON USAGE LOG
-      ====================================================== */
-      if (appliedCouponId) {
-        await tx.couponUsage.create({
-          data: {
-            couponId: appliedCouponId,
-            userId,
-            orderId: order.id,
-          },
-        });
-      }
 
       /* ======================================================
       SHIPPING
       ====================================================== */
+
       const metrics = await calculateOrderMetrics(order.id);
 
       const warehouse = await tx.warehouse.findFirst();
@@ -344,6 +327,7 @@ export const checkout = async (req: Request, res: Response) => {
       /* ======================================================
       PAYMENT
       ====================================================== */
+
       const payment = await tx.payment.create({
         data: {
           orderId: order.id,
@@ -356,6 +340,7 @@ export const checkout = async (req: Request, res: Response) => {
       /* ======================================================
       CLEAR CART
       ====================================================== */
+
       await tx.cartItem.deleteMany({
         where: { cartId: cart.id },
       });
@@ -363,16 +348,15 @@ export const checkout = async (req: Request, res: Response) => {
       /* ======================================================
       IDEMPOTENCY SAVE
       ====================================================== */
-      const responsePayload = {
-        orderId: order.id,
-        paymentId: payment.id,
-      };
 
       await tx.idempotencyKey.create({
         data: {
           key: req.idempotencyKey!,
           userId,
-          response: responsePayload,
+          response: {
+            orderId: order.id,
+            paymentId: payment.id,
+          },
         },
       });
 

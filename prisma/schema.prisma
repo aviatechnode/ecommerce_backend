@@ -150,19 +150,30 @@ model RefreshToken {
 model Address {
   id     String @id @default(uuid())
   userId String
-  type AddressType
+
+  name   String
+  phone  String
+
+  state NigerianState
+  lga   String
+  city  String
+
+  area  String?
+
   street String
-  city   String
-  state  NigerianState
-  lga    String
+
   landmark String?
-  postalCode String?
-  phone   String
-  country String @default("Nigeria")
-  isDefault Boolean? @default(false)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fullAddress String @db.Text
+
+  isDefault Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([state, lga])
 }
 
 model Wishlist {
@@ -720,16 +731,20 @@ model OrderAddress {
   name  String
   phone String
 
-  street String
-  city   String
-  state  NigerianState
-  lga    String
+  state NigerianState
+  lga   String
+  city  String
 
-  country String
+  area String?
+
+  street String
+
+  landmark String?
+
+  fullAddress String @db.Text
 
   order Order @relation(fields: [orderId], references: [id])
 }
-
 //////////////////////////////////////////////////////////
 // PAYMENTS
 //////////////////////////////////////////////////////////
@@ -1140,11 +1155,6 @@ enum PaymentStatus {
   PENDING
   SUCCESS
   FAILED
-}
-
-enum AddressType {
-  DELIVERY
-  BILLING
 }
 
 enum PurchaseOrderStatus {

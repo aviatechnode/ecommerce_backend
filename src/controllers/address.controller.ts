@@ -6,7 +6,6 @@ import {
 } from "../schemas/address.schema.js";
 import { normalizePhone } from "../utils/phone.utils.js";
 
-
 /* =========================================================
 CREATE ADDRESS
 ========================================================= */
@@ -28,14 +27,22 @@ export const createAddress = async (req: Request, res: Response) => {
 
     const data = parsed.data;
 
+    const fullAddress = [
+      data.street,
+      data.area,
+      data.landmark,
+      data.city,
+      data.lga,
+      data.state,
+    ]
+    .map((v) => (typeof v === "string" ? v.trim() : v))
+    .filter(Boolean)
+    .join(", ");
+
     const address = await prisma.$transaction(async (tx) => {
-      // ensure only one default per type
       if (data.isDefault) {
         await tx.address.updateMany({
-          where: {
-            userId: req.user!.id,
-            type: data.type,
-          },
+          where: { userId: req.user!.id },
           data: { isDefault: false },
         });
       }
@@ -43,15 +50,15 @@ export const createAddress = async (req: Request, res: Response) => {
       return tx.address.create({
         data: {
           userId: req.user!.id,
-          type: data.type,
-          street: data.street,
-          city: data.city,
+          name: data.name,
+          phone: normalizePhone(data.phone),
           state: data.state,
           lga: data.lga,
+          city: data.city,
+          area: data.area ?? null,
+          street: data.street,
           landmark: data.landmark ?? null,
-          postalCode: data.postalCode ?? null,
-          phone: normalizePhone(data.phone),
-          country: data.country ?? "Nigeria",
+          fullAddress,
           isDefault: data.isDefault ?? false,
         },
       });
@@ -81,11 +88,10 @@ export const getMyAddresses = async (req: Request, res: Response) => {
     }
 
     const addresses = await prisma.address.findMany({
-      where: { userId: req.user.id },
-      orderBy: [
-        { isDefault: "desc" },
-        { createdAt: "desc" },
-      ],
+      where: {
+        userId: req.user.id,
+      },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     });
 
     return res.json({ addresses });
@@ -121,7 +127,9 @@ export const getAddress = async (
     });
 
     if (!address) {
-      return res.status(404).json({ message: "Address not found" });
+      return res.status(404).json({
+        message: "Address not found",
+      });
     }
 
     return res.json({ address });
@@ -159,26 +167,32 @@ export const updateAddress = async (
     }
 
     const existing = await prisma.address.findFirst({
-      where: {
-        id,
-        userId: req.user.id,
-      },
+      where: { id, userId: req.user.id },
     });
 
     if (!existing) {
-      return res.status(404).json({ message: "Address not found" });
+      return res.status(404).json({
+        message: "Address not found",
+      });
     }
 
     const data = parsed.data;
 
+    const fullAddress = [
+      data.street ?? existing.street,
+      data.area ?? existing.area,
+      data.landmark ?? existing.landmark,
+      data.city ?? existing.city,
+      data.lga ?? existing.lga,
+      data.state ?? existing.state,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
     const address = await prisma.$transaction(async (tx) => {
-      // handle default switch
       if (data.isDefault === true) {
         await tx.address.updateMany({
-          where: {
-            userId: req.user!.id,
-            type: existing.type,
-          },
+          where: { userId: req.user!.id },
           data: { isDefault: false },
         });
       }
@@ -186,22 +200,17 @@ export const updateAddress = async (
       return tx.address.update({
         where: { id },
         data: {
-          ...(data.street !== undefined && { street: data.street }),
-          ...(data.city !== undefined && { city: data.city }),
-          ...(data.state !== undefined && { state: data.state }),
-          ...(data.lga !== undefined && { lga: data.lga }),
-          ...(data.landmark !== undefined && {
-            landmark: data.landmark ?? null,
-          }),
-          ...(data.postalCode !== undefined && {
-            postalCode: data.postalCode ?? null,
-          }),
+          ...(data.name !== undefined && { name: data.name }),
           ...(data.phone !== undefined && {
             phone: normalizePhone(data.phone),
           }),
-          ...(data.country !== undefined && {
-            country: data.country,
-          }),
+          ...(data.state !== undefined && { state: data.state }),
+          ...(data.lga !== undefined && { lga: data.lga }),
+          ...(data.city !== undefined && { city: data.city }),
+          ...(data.area !== undefined && { area: data.area ?? null }),
+          ...(data.street !== undefined && { street: data.street }),
+          ...(data.landmark !== undefined && { landmark: data.landmark ?? null }),
+          fullAddress,
           ...(data.isDefault !== undefined && {
             isDefault: data.isDefault,
           }),
@@ -245,14 +254,18 @@ export const deleteAddress = async (
     });
 
     if (!existing) {
-      return res.status(404).json({ message: "Address not found" });
+      return res.status(404).json({
+        message: "Address not found",
+      });
     }
 
     await prisma.address.delete({
       where: { id },
     });
 
-    return res.json({ message: "Address deleted" });
+    return res.json({
+      message: "Address deleted",
+    });
   } catch (error) {
     console.error("Delete Address Error:", error);
 
@@ -272,7 +285,9 @@ export const setDefaultAddress = async (
 ) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
     const { id } = req.params;
@@ -285,20 +300,25 @@ export const setDefaultAddress = async (
     });
 
     if (!address) {
-      return res.status(404).json({ message: "Address not found" });
+      return res.status(404).json({
+        message: "Address not found",
+      });
     }
 
     await prisma.$transaction([
       prisma.address.updateMany({
         where: {
           userId: req.user.id,
-          type: address.type,
         },
-        data: { isDefault: false },
+        data: {
+          isDefault: false,
+        },
       }),
       prisma.address.update({
         where: { id },
-        data: { isDefault: true },
+        data: {
+          isDefault: true,
+        },
       }),
     ]);
 

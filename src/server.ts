@@ -37,6 +37,7 @@ import cartRoutes from "./routes/cart.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import reviewRoutes from "./routes/product.review.routes.js";
 import couponRoutes from "./routes/coupon.routes.js"
+import addressRoutes from "./routes/address.routes.js"
 
 
 dotenv.config();
@@ -124,6 +125,8 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/coupon", couponRoutes)
+app.use("/api/address", addressRoutes)
+
 
 /* ================= WEBHOOKS ================= */
 app.use("/webhooks", webhookRoutes);

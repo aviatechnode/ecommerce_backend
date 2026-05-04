@@ -1,67 +1,65 @@
 import { z } from "zod";
-import { AddressType, NigerianState } from "@prisma/client";
+import { NigerianState } from "@prisma/client";
 
 /* =========================================================
 HELPERS
 ========================================================= */
 
-// Nigerian phone validation (strict but practical)
-const nigerianPhoneRegex =
-  /^(?:\+234|0)(7|8|9)(0|1)\d{8}$/;
-
-// Optional stricter normalization can be done at service layer
+const nigerianPhoneRegex = /^(?:\+234|0)(7|8|9)(0|1)\d{8}$/;
 
 /* =========================================================
 BASE ADDRESS SCHEMA
+(matches Prisma Address model exactly)
 ========================================================= */
 
 export const addressSchema = z.object({
-  type: z.nativeEnum(AddressType).default(AddressType.DELIVERY),
-
-  street: z
+  name: z
     .string()
-    .min(5, "Street must be at least 5 characters")
-    .max(255)
+    .min(2, "Name is required")
+    .max(100, "Name cannot exceed 100 characters")
     .trim(),
-
-  city: z
-    .string()
-    .min(2, "City is required")
-    .max(100)
-    .trim(),
-
-  state: z.nativeEnum(NigerianState, {
-    errorMap: () => ({ message: "Invalid Nigerian state" }),
-  }),
-
-  lga: z
-    .string()
-    .min(2, "LGA is required")
-    .max(100)
-    .trim(),
-
-  landmark: z
-    .string()
-    .max(255)
-    .trim()
-    .optional()
-    .nullable(),
-
-  postalCode: z
-    .string()
-    .max(20)
-    .trim()
-    .optional()
-    .nullable(),
 
   phone: z
     .string()
     .regex(nigerianPhoneRegex, "Invalid Nigerian phone number"),
 
-  country: z
+  state: z.nativeEnum(NigerianState, {
+    errorMap: () => ({
+      message: "Invalid Nigerian state",
+    }),
+  }),
+
+  lga: z
     .string()
-    .default("Nigeria")
-    .transform((val) => val.trim()),
+    .min(2, "LGA is required")
+    .max(100, "LGA cannot exceed 100 characters")
+    .trim(),
+
+  city: z
+    .string()
+    .min(2, "City is required")
+    .max(100, "City cannot exceed 100 characters")
+    .trim(),
+
+  area: z
+    .string()
+    .max(100, "Area cannot exceed 100 characters")
+    .trim()
+    .optional()
+    .nullable(),
+
+  street: z
+    .string()
+    .min(2, "Street is required")
+    .max(255, "Street cannot exceed 255 characters")
+    .trim(),
+
+  landmark: z
+    .string()
+    .max(255, "Landmark cannot exceed 255 characters")
+    .trim()
+    .optional()
+    .nullable(),
 
   isDefault: z.boolean().optional().default(false),
 });
@@ -70,26 +68,34 @@ export const addressSchema = z.object({
 CREATE ADDRESS SCHEMA
 ========================================================= */
 
+/**
+ * fullAddress is now backend-generated
+ */
 export const createAddressSchema = addressSchema;
 
 /* =========================================================
 UPDATE ADDRESS SCHEMA (PATCH SAFE)
 ========================================================= */
 
+/**
+ * PATCH-safe update (no fullAddress from client)
+ */
 export const updateAddressSchema = addressSchema.partial();
 
 /* =========================================================
-CHECKOUT ADDRESS INPUT (IMPORTANT)
+CHECKOUT ADDRESS INPUT
 ========================================================= */
 
-export const checkoutAddressSchema = z.object({
-  addressId: z.string().uuid().optional(),
+export const checkoutAddressSchema = z
+  .object({
+    addressId: z
+      .string()
+      .uuid("Invalid address ID")
+      .optional(),
 
-  address: addressSchema.optional(),
-}).refine(
-  (data) => data.addressId || data.address,
-  {
+    address: createAddressSchema.optional(),
+  })
+  .refine((data) => !!(data.addressId || data.address), {
     message: "Either addressId or address must be provided",
     path: ["addressId"],
-  }
-);
+  });
