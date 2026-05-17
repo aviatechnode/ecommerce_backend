@@ -4,6 +4,7 @@ import {
   addWishlistItem,
   removeWishlistItem,
   clearWishlist,
+  toggleWishlist,
 } from "../controllers/wishlist.controller.js";
 
 import {
@@ -31,6 +32,17 @@ router.post(
   protect,
   requirePermission("wishlist:create"),
   addWishlistItem
+);
+
+//////////////////////////////////////////////////////////
+// TOGGLE WISHLIST
+//////////////////////////////////////////////////////////
+
+router.post(
+  "/toggle",
+  protect,
+  requirePermission("wishlist:create"),
+  toggleWishlist
 );
 
 // REMOVE ITEM

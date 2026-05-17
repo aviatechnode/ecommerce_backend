@@ -1,12 +1,9 @@
+import { shipmentService } from "../services/csl/shipping.service.js";
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prismadb.js";
-import { NigerianState } from "@prisma/client";
-import {
-  addToCartSchema,
-  updateQuantitySchema,
-} from "../schemas/cart.schema.js";
-import { allocateVariantStock } from "../services/warehouse-allocation.service.js";
-import { calculateShippingFee } from "../services/shipping.service.js";
+import { addToCartSchema, updateQuantitySchema } from "../schemas/cart.schema.js";
+
+import { allocateVariantStock } from "../services/csl/warehouse-allocation.service.js";
 
 //////////////////////////////////////////////////////////
 // CART HELPERS
@@ -29,10 +26,7 @@ function calculateTotals(items: any[]) {
     totalItems += item.quantity;
   }
 
-  return {
-    subtotal,
-    totalItems,
-  };
+  return { subtotal, totalItems };
 }
 
 //////////////////////////////////////////////////////////
@@ -59,10 +53,7 @@ function calculateCartMetrics(items: any[]) {
     volumetricWeight += volumetric * item.quantity;
   }
 
-  const chargeableWeight = Math.max(
-    actualWeight,
-    volumetricWeight
-  );
+  const chargeableWeight = Math.max(actualWeight, volumetricWeight);
 
   return {
     actualWeight,
@@ -72,63 +63,72 @@ function calculateCartMetrics(items: any[]) {
 }
 
 //////////////////////////////////////////////////////////
-// SHIPPING
+// SHIPPING (NEW SYSTEM)
 //////////////////////////////////////////////////////////
 
-async function calculateCartShipping(
-  cartId: string,
-  userId: string
-) {
-  const cart = await prisma.cart.findUnique({
-    where: { id: cartId },
-    include: {
-      items: {
-        include: {
-          variant: true,
+async function calculateCartShipping(cartId: string) {
+  try {
+    const cart = await prisma.cart.findUnique({
+      where: { id: cartId },
+      include: {
+        items: {
+          include: { variant: true },
         },
       },
-    },
-  });
+    });
 
-  if (!cart || !cart.items.length) return 0;
+    if (!cart || cart.items.length === 0) return null;
 
-  const address = await prisma.address.findFirst({
-    where: {
-      userId,
-      isDefault: true,
-    },
-  });
+    // ⚠️ create temp order-like structure
+    const fakeOrder = await prisma.order.create({
+      data: {
+        orderNumber: `TEMP-${Date.now()}`,
+        userId: "temp",
+        status: "PENDING",
+        paymentStatus: "PENDING",
+        subtotal: 0,
+        deliveryFee: 0,
+        totalAmount: 0,
+        currency: "NGN",
+      },
+    });
 
-  if (!address) return 0;
+    // attach items
+    for (const item of cart.items) {
+      await prisma.orderItem.create({
+        data: {
+          orderId: fakeOrder.id,
+          variantId: item.variantId,
+          productName: "temp",
+          variantName: "temp",
+          sku: "temp",
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+        },
+      });
+    }
 
-  const warehouse = await prisma.warehouse.findFirst();
+    const shipping = await shipmentService.calculate(fakeOrder.id);
 
-  if (!warehouse) return 0;
+    // cleanup
+    await prisma.order.delete({
+      where: { id: fakeOrder.id },
+    });
 
-  const metrics = calculateCartMetrics(cart.items);
-
-  const shipping = await calculateShippingFee(
-    warehouse.state as NigerianState,
-    address.state,
-    metrics.chargeableWeight
-  );
-
-  return shipping.fee;
+    return shipping;
+  } catch (err) {
+    return null; // ⚠️ never crash cart because of shipping
+  }
 }
 
 //////////////////////////////////////////////////////////
 // GET CART
 //////////////////////////////////////////////////////////
 
-export const getMyCart = async (
-  req: Request,
-  res: Response
-) => {
+export const getMyCart = async (req: Request, res: Response) => {
   try {
     if (!req.user) {
-      return res
-        .status(401)
-        .json({ message: "Unauthorized" });
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
     const cart = await getOrCreateCart(req.user.id);
@@ -141,9 +141,7 @@ export const getMyCart = async (
             variant: {
               include: {
                 product: {
-                  include: {
-                    medias: true,
-                  },
+                  include: { medias: true },
                 },
               },
             },
@@ -153,16 +151,15 @@ export const getMyCart = async (
     });
 
     const totals = calculateTotals(fullCart?.items || []);
-    const shipping = await calculateCartShipping(
-      cart.id,
-      req.user.id
-    );
+    const shipping = await calculateCartShipping(cart.id);
 
     return res.json({
       cart: fullCart,
       totals,
-      shipping,
-      grandTotal: totals.subtotal + shipping,
+      shipping: shipping?.selected ?? null,
+      grandTotal:
+        totals.subtotal +
+        (shipping?.selected?.finalFee ?? 0),
     });
   } catch (error) {
     console.error("Get Cart Error:", error);
@@ -177,15 +174,10 @@ export const getMyCart = async (
 // ADD TO CART
 //////////////////////////////////////////////////////////
 
-export const addToCart = async (
-  req: Request,
-  res: Response
-) => {
+export const addToCart = async (req: Request, res: Response) => {
   try {
     if (!req.user) {
-      return res.status(401).json({
-        message: "Unauthorized",
-      });
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
     const parsed = addToCartSchema.safeParse(req.body);
@@ -199,9 +191,7 @@ export const addToCart = async (
     const { variantId, quantity } = parsed.data;
 
     const variant = await prisma.productVariant.findUnique({
-      where: {
-        id: variantId,
-      },
+      where: { id: variantId },
       include: {
         product: true,
         inventories: true,
@@ -209,22 +199,15 @@ export const addToCart = async (
     });
 
     if (!variant) {
-      return res.status(404).json({
-        message: "Variant not found",
-      });
+      return res.status(404).json({ message: "Variant not found" });
     }
 
     if (!variant.product.isActive || !variant.isActive) {
-      return res.status(400).json({
-        message: "Product inactive",
-      });
+      return res.status(400).json({ message: "Product inactive" });
     }
 
     const address = await prisma.address.findFirst({
-      where: {
-        userId: req.user.id,
-        isDefault: true,
-      },
+      where: { userId: req.user.id, isDefault: true },
     });
 
     let allocations: any[] = [];
@@ -233,18 +216,15 @@ export const addToCart = async (
       allocations = await allocateVariantStock(
         variantId,
         quantity,
-        address.state as NigerianState
+        address.stateId
       );
     } else {
       const availableInventory = variant.inventories.find(
-        (inv) =>
-          inv.stock - (inv.reserved ?? 0) >= quantity
+        (inv) => inv.stock - (inv.reserved ?? 0) >= quantity
       );
 
       if (!availableInventory) {
-        return res.status(400).json({
-          message: "Out of stock",
-        });
+        return res.status(400).json({ message: "Out of stock" });
       }
 
       allocations = [
@@ -269,22 +249,16 @@ export const addToCart = async (
 
       for (const alloc of allocations) {
         await tx.productInventory.update({
-          where: {
-            id: alloc.inventoryId,
-          },
+          where: { id: alloc.inventoryId },
           data: {
-            reserved: {
-              increment: alloc.quantity,
-            },
+            reserved: { increment: alloc.quantity },
           },
         });
       }
 
       if (existing) {
         return tx.cartItem.update({
-          where: {
-            id: existing.id,
-          },
+          where: { id: existing.id },
           data: {
             quantity: existing.quantity + quantity,
           },
@@ -326,14 +300,10 @@ export const updateCartItem = async (
 ) => {
   try {
     if (!req.user) {
-      return res
-        .status(401)
-        .json({ message: "Unauthorized" });
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const parsed = updateQuantitySchema.safeParse(
-      req.body
-    );
+    const parsed = updateQuantitySchema.safeParse(req.body);
 
     if (!parsed.success) {
       return res.status(400).json({
@@ -344,16 +314,10 @@ export const updateCartItem = async (
     const { quantity } = parsed.data;
 
     const item = await prisma.cartItem.findUnique({
-      where: {
-        id: req.params.id,
-      },
+      where: { id: req.params.id },
       include: {
         cart: true,
-        variant: {
-          include: {
-            inventories: true,
-          },
-        },
+        variant: { include: { inventories: true } },
       },
     });
 
@@ -363,7 +327,9 @@ export const updateCartItem = async (
       });
     }
 
-    const inventory = item.variant.inventories[0];
+    const inventory = item.variant.inventories.find(
+      (inv) => inv.stock > 0
+    );
 
     if (!inventory) {
       return res.status(400).json({
@@ -384,9 +350,7 @@ export const updateCartItem = async (
 
     await prisma.$transaction(async (tx) => {
       await tx.productInventory.update({
-        where: {
-          id: inventory.id,
-        },
+        where: { id: inventory.id },
         data: {
           reserved:
             difference > 0
@@ -396,18 +360,12 @@ export const updateCartItem = async (
       });
 
       await tx.cartItem.update({
-        where: {
-          id: item.id,
-        },
-        data: {
-          quantity,
-        },
+        where: { id: item.id },
+        data: { quantity },
       });
     });
 
-    return res.json({
-      message: "Cart updated",
-    });
+    return res.json({ message: "Cart updated" });
   } catch (error) {
     console.error("Update Cart Error:", error);
 
@@ -427,22 +385,14 @@ export const removeCartItem = async (
 ) => {
   try {
     if (!req.user) {
-      return res
-        .status(401)
-        .json({ message: "Unauthorized" });
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
     const item = await prisma.cartItem.findUnique({
-      where: {
-        id: req.params.id,
-      },
+      where: { id: req.params.id },
       include: {
         cart: true,
-        variant: {
-          include: {
-            inventories: true,
-          },
-        },
+        variant: { include: { inventories: true } },
       },
     });
 
@@ -452,7 +402,9 @@ export const removeCartItem = async (
       });
     }
 
-    const inventory = item.variant.inventories[0];
+    const inventory = item.variant.inventories.find(
+      (inv) => inv.stock > 0
+    );
 
     if (!inventory) {
       return res.status(400).json({
@@ -462,26 +414,18 @@ export const removeCartItem = async (
 
     await prisma.$transaction(async (tx) => {
       await tx.productInventory.update({
-        where: {
-          id: inventory.id,
-        },
+        where: { id: inventory.id },
         data: {
-          reserved: {
-            decrement: item.quantity,
-          },
+          reserved: { decrement: item.quantity },
         },
       });
 
       await tx.cartItem.delete({
-        where: {
-          id: item.id,
-        },
+        where: { id: item.id },
       });
     });
 
-    return res.json({
-      message: "Item removed",
-    });
+    return res.json({ message: "Item removed" });
   } catch (error) {
     console.error("Remove Cart Error:", error);
 
@@ -495,73 +439,41 @@ export const removeCartItem = async (
 // CLEAR CART
 //////////////////////////////////////////////////////////
 
-export const clearCart = async (
-  req: Request,
-  res: Response
-) => {
+export const clearCart = async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res
-        .status(401)
-        .json({ message: "Unauthorized" });
-    }
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
 
     const cart = await prisma.cart.findUnique({
-      where: {
-        userId: req.user.id,
-      },
+      where: { userId: req.user.id },
       include: {
-        items: {
-          include: {
-            variant: {
-              include: {
-                inventories: true,
-              },
-            },
-          },
-        },
+        items: { include: { variant: { include: { inventories: true } } } },
       },
     });
 
-    if (!cart) {
-      return res.json({
-        message: "Cart already empty",
-      });
-    }
+    if (!cart) return res.json({ message: "Cart already empty" });
 
     await prisma.$transaction(async (tx) => {
       for (const item of cart.items) {
-        const inventory = item.variant.inventories[0];
+        const inv = item.variant.inventories[0];
 
-        if (!inventory) continue;
-
-        await tx.productInventory.update({
-          where: {
-            id: inventory.id,
-          },
-          data: {
-            reserved: {
-              decrement: item.quantity,
+        if (inv) {
+          await tx.productInventory.update({
+            where: { id: inv.id },
+            data: {
+              reserved: { decrement: item.quantity },
             },
-          },
-        });
+          });
+        }
       }
 
       await tx.cartItem.deleteMany({
-        where: {
-          cartId: cart.id,
-        },
+        where: { cartId: cart.id },
       });
     });
 
-    return res.json({
-      message: "Cart cleared",
-    });
+    return res.json({ message: "Cart cleared" });
   } catch (error) {
-    console.error("Clear Cart Error:", error);
-
-    return res.status(500).json({
-      message: "Server error",
-    });
+    console.error(error);
+    return res.status(500).json({ message: "Server error" });
   }
 };

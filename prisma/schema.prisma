@@ -99,9 +99,9 @@ model User {
   role       Role @relation(fields: [roleId], references: [id])
 
   emailVerified Boolean @default(false)
-  verificationToken String?
+  verificationToken String? @unique
 
-  resetPasswordToken   String?
+  resetPasswordToken   String? @unique
   resetPasswordExpires DateTime?
   isOnline Boolean @default(false)
   lastSeen DateTime?
@@ -121,8 +121,14 @@ model User {
   auditLogs AuditLog[]
   messages Message[]
   conversationParticipants ConversationParticipant[]
+  createdCoupons Coupon[] @relation("CouponCreatedBy")
+  updatedCoupons Coupon[] @relation("CouponUpdatedBy")
+  couponAuditLogs CouponAuditLog[] @relation("CouponAuditAdmin")
 
   couponUsages CouponUsage[]
+  couponReservations CouponReservation[]
+  couponCustomerRules CouponCustomerRule[]
+  returnRequests ReturnRequest[]
 }
 
 model RefreshToken {
@@ -154,26 +160,23 @@ model Address {
   name   String
   phone  String
 
-  state NigerianState
-  lga   String
-  city  String
+  stateId String
+  lgaId   String
+  city    String
 
-  area  String?
-
-  street String
-
-  landmark String?
-
+  area        String?
+  street      String
+  landmark    String?
   fullAddress String @db.Text
 
   isDefault Boolean @default(false)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  state State @relation(fields: [stateId], references: [id])
+  lga   LGA   @relation(fields: [lgaId], references: [id])
 
   @@index([userId])
-  @@index([state, lga])
+  @@index([stateId, lgaId])
 }
 
 model Wishlist {
@@ -221,6 +224,8 @@ model Category {
   children Category[] @relation("CategoryTree")
 
   products Product[]
+
+  couponCategoryRules CouponCategoryRule[]
 }
 
 model Brand {
@@ -247,12 +252,12 @@ model Product {
   isActive Boolean @default(true)
   searchKeywords String?
   isFeatured Boolean @default(false)
+  viewCount Int @default(0)
+  soldCount Int @default(0)
   
 
   brand    Brand    @relation(fields: [brandId], references: [id])
   category Category @relation(fields: [categoryId], references: [id])
-  viewCount Int @default(0)
-  soldCount Int @default(0)
 
   oemNumbers     ProductOEM[]
   variants       ProductVariant[]
@@ -272,6 +277,7 @@ model Product {
   @@index([categoryId])
   @@index([isActive])
   @@index([createdAt])
+  couponProductRules CouponProductRule[]
 }
 
 model ProductVariant {
@@ -305,6 +311,7 @@ model ProductVariant {
   updatedAt DateTime @updatedAt
 
   @@index([productId])
+  stockReservations StockReservation[]
 }
 
 model ProductMedia {
@@ -500,21 +507,7 @@ model ProductFitment {
 // INVENTORY
 //////////////////////////////////////////////////////////
 
-model Warehouse {
-  id   String @id @default(uuid())
-  name String
 
-  state NigerianState
-  city  String
-
-  inventories ProductInventory[]
-  routes      WarehouseRoute[]
-
-  inventoryMovements InventoryMovement[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
 
 model ProductInventory {
   id String @id @default(uuid())
@@ -555,6 +548,9 @@ model StockReservation {
   variantId   String
   warehouseId String
   orderId     String?
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  order Order? @relation(fields: [orderId], references: [id])
 
   quantity Int
 
@@ -569,15 +565,60 @@ model StockReservation {
   @@index([orderId])
 }
 
+model Warehouse {
+  id   String @id @default(uuid())
+  name String
+
+  stateId String
+  city    String
+
+  isActive Boolean @default(true)
+
+  state State @relation(fields: [stateId], references: [id])
+
+  inventory ProductInventory[]
+  supportedLGAs WarehouseLGA[]
+
+  routes WarehouseRoute[]
+  inventoryMovements InventoryMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([stateId])
+  stockReservations StockReservation[]
+}
 model WarehouseRoute {
   id String @id @default(uuid())
 
   warehouseId String
-  state       NigerianState
+  stateId     String
+  lgaId       String?
 
   priority Int
 
-  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  state     State     @relation(fields: [stateId], references: [id])
+  lga       LGA?      @relation(fields: [lgaId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([warehouseId])
+  @@index([stateId])
+  @@index([lgaId])
+}
+
+model WarehouseLGA {
+  id String @id @default(uuid())
+
+  warehouseId String
+  lgaId       String
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  lga       LGA       @relation(fields: [lgaId], references: [id], onDelete: Cascade)
+
+  @@unique([warehouseId, lgaId])
+  @@index([lgaId])
 }
 
 //////////////////////////////////////////////////////////
@@ -601,7 +642,7 @@ model PurchaseOrder {
 
   status PurchaseOrderStatus
 
-  totalAmount Decimal
+  totalAmount Decimal @db.Decimal(12,2)
 
   supplier Supplier @relation(fields: [supplierId], references: [id])
 
@@ -617,7 +658,7 @@ model PurchaseOrderItem {
   variantId       String
 
   quantity  Int
-  costPrice Decimal
+  costPrice Decimal @db.Decimal(12,2)
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
   variant       ProductVariant @relation(fields: [variantId], references: [id])
@@ -631,12 +672,37 @@ model Cart {
   id     String @id @default(uuid())
   userId String @unique
 
+  //////////////////////////////////////////////////
+  // SHIPPING ESTIMATION
+  //////////////////////////////////////////////////
+
+  deliveryStateId String?
+  deliveryLgaId   String?
+
+  shippingZoneId String?
+
+  estimatedDeliveryFee Decimal? @db.Decimal(12,2)
+
+  subtotal Decimal? @db.Decimal(12,2)
+
+  grandTotal Decimal? @db.Decimal(12,2)
+
+  //////////////////////////////////////////////////
+
   user User @relation(fields: [userId], references: [id])
+
+  deliveryState State? @relation(fields: [deliveryStateId], references: [id])
+  deliveryLga   LGA?   @relation(fields: [deliveryLgaId], references: [id])
+
+  shippingZone ShippingZone? @relation(fields: [shippingZoneId], references: [id])
 
   items CartItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([deliveryStateId])
+  @@index([deliveryLgaId])
 }
 
 model CartItem {
@@ -676,7 +742,7 @@ model Order {
 
   couponId String?
 
-  user   User   @relation(fields: [userId], references: [id])
+  user   User    @relation(fields: [userId], references: [id])
   coupon Coupon? @relation(fields: [couponId], references: [id])
 
   items  OrderItem[]
@@ -684,10 +750,28 @@ model Order {
 
   address  OrderAddress?
   payment  Payment?
-  shipment Shipment?
+
   discountAmount Decimal @default(0)
 
+  // 🔥 NEW: ORDER EXPIRY (CRITICAL)
+  expiresAt DateTime?
+
+  // optional but useful for audit/debug
+  cancelledAt DateTime?
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // relations
+  couponReservations CouponReservation[]
+  shipments Shipment[]
+
+  // 🔥 INDEXES FOR PERFORMANCE (VERY IMPORTANT)
+  @@index([status, paymentStatus])
+  @@index([expiresAt])
+  couponUsages CouponUsage[]
+  returnRequests ReturnRequest[]
+  stockReservations StockReservation[]
 }
 
 model OrderItem {
@@ -731,19 +815,21 @@ model OrderAddress {
   name  String
   phone String
 
-  state NigerianState
-  lga   String
-  city  String
+  stateId String
+  lgaId   String
+  city    String
 
-  area String?
-
-  street String
-
-  landmark String?
-
+  area        String?
+  street      String
+  landmark    String?
   fullAddress String @db.Text
 
-  order Order @relation(fields: [orderId], references: [id])
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  state State @relation(fields: [stateId], references: [id])
+  lga   LGA   @relation(fields: [lgaId], references: [id])
+
+  @@index([stateId, lgaId])
 }
 //////////////////////////////////////////////////////////
 // PAYMENTS
@@ -755,11 +841,18 @@ model Payment {
 
   reference String @unique
 
+  provider PaymentProvider
+  providerReference String?
+  gatewayResponse Json?
+  failureReason String?
+
   amount Decimal @db.Decimal(12,2)
+  currency String @default("NGN")
 
   status PaymentStatus
 
   paidAt DateTime?
+  verifiedAt DateTime?
 
   order Order @relation(fields: [orderId], references: [id])
 
@@ -770,9 +863,9 @@ model Payment {
   updatedAt DateTime @updatedAt
 
   @@index([reference])
+  @@index([providerReference])
   @@index([status])
 }
-
 model PaymentTransaction {
   id String @id @default(uuid())
 
@@ -822,6 +915,8 @@ model ReturnRequest {
   orderId String
   userId  String
 
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   status RefundStatus @default(PENDING)
 
   reason String?
@@ -835,131 +930,526 @@ model ReturnRequest {
 //////////////////////////////////////////////////////////
 // SHIPPING
 //////////////////////////////////////////////////////////
+model ShipmentEvent {
+  id String @id @default(uuid())
 
-model Courier {
-  id   String @id @default(uuid())
-  name String @unique
+  shipmentId String
 
-  phone   String?
-  website String?
+  status ShipmentStatus
 
-  shippingRates ShippingRate[]
-  shipments     Shipment[]
-  shippingZones ShippingZone[]
+  title String
+  description String?
+
+  location String?
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+
+  @@index([shipmentId])
 }
 
 model ShippingRate {
   id String @id @default(uuid())
 
   courierId String
+  zoneId String
 
-  originState      NigerianState
-  destinationState NigerianState
+  name String
 
-  baseFee  Decimal @db.Decimal(12,2)
+  minWeight Float @default(0)
+  maxWeight Float
+
+  baseFee Decimal @db.Decimal(12,2)
+
   perKgFee Decimal @db.Decimal(12,2)
-  perKmFee Decimal @db.Decimal(12,2)
 
-  courier Courier @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  volumetricDivisor Float @default(5000)
+
+  fixedFee Decimal? @db.Decimal(12,2)
+
+  remoteAreaSurcharge Decimal? @db.Decimal(12,2)
+
+  insurancePercent Float @default(0)
+
+  estimatedDaysMin Int
+  estimatedDaysMax Int
+
+  supportsCOD Boolean @default(false)
+
+  isActive Boolean @default(true)
+
+  courier Courier @relation(fields: [courierId], references: [id])
+  zone ShippingZone @relation(fields: [zoneId], references: [id])
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([originState, destinationState])
   @@index([courierId])
-}
-
-model ShippingZone {
-  id String @id @default(uuid())
-
-  courierId String
-
-  state NigerianState
-  lga   String?
-
-  courier Courier @relation(fields: [courierId], references: [id], onDelete: Cascade)
-
-  @@index([state])
-}
-
-model StateDistance {
-  id String @id @default(uuid())
-
-  originState      NigerianState
-  destinationState NigerianState
-
-  distanceKm Float
-
-  createdAt DateTime @default(now())
-
-  @@unique([originState, destinationState])
+  @@index([zoneId])
+  shipments Shipment[]
 }
 
 model Shipment {
   id String @id @default(uuid())
 
-  orderId String @unique
+  orderId String
 
-  courierId String?
+  courierId String
+  shippingRateId String?
 
-  trackingNo String? @unique
+  trackingNumber String @unique
 
-  status ShipmentStatus
+  status ShipmentStatus @default(PENDING)
 
-  shippedAt   DateTime?
+  deliveryFee Decimal @db.Decimal(12,2)
+  heavyItemSurcharge Decimal? @db.Decimal(12,2)
+  supportsCOD Boolean @default(false)
+  fragileFee Decimal? @db.Decimal(12,2)
+  sameDayFee Decimal? @db.Decimal(12,2)
+
+  weight Float?
+
+  volumetricWeight Float?
+
+  chargeableWeight Float?
+
+  estimatedDays Int?
+
+  shippedAt DateTime?
   deliveredAt DateTime?
 
-  order   Order   @relation(fields: [orderId], references: [id])
-  courier Courier? @relation(fields: [courierId], references: [id])
+  notes String?
+
+  failedReason String?
+  shippingMethod ShippingMethod
+  pickupStationId String?
+  pickupStation   PickupStation? @relation(fields: [pickupStationId], references: [id])
+
+  courier Courier @relation(fields: [courierId], references: [id])
+
+  shippingRate ShippingRate? @relation(fields: [shippingRateId], references: [id])
+  order Order @relation(fields: [orderId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([trackingNo])
-}
-//////////////////////////////////////////////////////////
-// MARKETING
-//////////////////////////////////////////////////////////
+  events ShipmentEvent[]
 
-model Coupon {
-  id   String @id @default(uuid())
+  @@index([orderId])
+  @@index([trackingNumber])
+  @@index([status])
+}
+
+model Courier {
+  id String @id @default(uuid())
+
+  name String @unique
+
+  phone String?
+  email String?
+  website String?
+
+  isActive Boolean @default(true)
+
+  rates ShippingRate[]
+  shipments Shipment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ShippingZoneLGA {
+  id String @id @default(uuid())
+
+  zoneId String
+  lgaId String
+
+  zone ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  lga LGA @relation(fields: [lgaId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([zoneId, lgaId])
+}
+
+model ShippingZoneState {
+  id String @id @default(uuid())
+
+  zoneId String
+  stateId String
+
+  zone ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  state State @relation(fields: [stateId], references: [id], onDelete: Cascade)
+
+  @@unique([zoneId, stateId])
+}
+
+model ShippingZone {
+  id String @id @default(uuid())
+
+  name String @unique
   code String @unique
 
-  type  CouponType
-  value Decimal @db.Decimal(12,2)
+  description String?
 
-  minOrder Decimal? @db.Decimal(12,2)
-
-  usageLimit Int?
-  usedCount  Int @default(0)
-
-  perUserLimit Int? @default(1) 
-  expiresAt DateTime?
   isActive Boolean @default(true)
-  usages CouponUsage[]
 
-  orders Order[]
+  states ShippingZoneState[]
+  lgas ShippingZoneLGA[]
+
+  rates ShippingRate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  carts Cart[]
 }
 
-model CouponUsage {
+model PickupStation {
+  id String @id @default(uuid())
+
+  name String
+
+  stateId String
+  lgaId   String
+
+  address String @db.Text
+
+  landmark String?
+  phone    String?
+
+  latitude  Float?
+  longitude Float?
+
+  openingHours String?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  //////////////////////////////////////////////////
+  // RELATIONS
+  //////////////////////////////////////////////////
+
+  state State @relation(fields: [stateId], references: [id])
+  lga   LGA   @relation(fields: [lgaId], references: [id])
+
+  shipments Shipment[]
+
+  //////////////////////////////////////////////////
+  // INDEXES
+  //////////////////////////////////////////////////
+
+  @@index([stateId])
+  @@index([lgaId])
+  @@index([isActive])
+  @@index([stateId, lgaId])
+}
+
+model State {
+  id   String @id @default(uuid())
+  name String @unique
+  latitude  Float?
+  longitude Float?
+
+  lgas LGA[]
+
+  warehouses Warehouse[]
+
+  orderAddresses OrderAddress[]
+  addresses      Address[]
+  warehouseRoutes WarehouseRoute[]
+
+  shippingZoneStates ShippingZoneState[]
+
+  carts Cart[]
+
+  pickupStations PickupStation[]
+}
+
+model LGA {
+  id   String @id @default(uuid())
+  name String
+  latitude  Float?
+  longitude Float?
+
+  stateId String
+  state   State @relation(fields: [stateId], references: [id], onDelete: Cascade)
+
+  warehouses WarehouseLGA[]
+
+  orderAddresses OrderAddress[]
+  addresses      Address[]
+  warehouseRoutes WarehouseRoute[]
+  @@unique([stateId, name])
+  @@index([stateId])
+  shippingZoneLGAs ShippingZoneLGA[]
+  carts Cart[]
+  pickupStations PickupStation[]
+}
+
+//////////////////////////////////////////////////////////
+// MARKETING (PRODUCTION GRADE)
+//////////////////////////////////////////////////////////
+model Coupon {
+  id String @id @default(uuid())
+
+  //////////////////////////////////////////////////////////
+  // Identity
+  //////////////////////////////////////////////////////////
+
+  code        String @unique
+  name        String
+  description String?
+
+  //////////////////////////////////////////////////////////
+  // Lifecycle
+  //////////////////////////////////////////////////////////
+
+  status      CouponStatus @default(DRAFT)
+  isActive    Boolean      @default(true)
+
+  startsAt    DateTime?
+  expiresAt   DateTime?
+
+  archivedAt  DateTime?
+  deletedAt   DateTime?
+
+  //////////////////////////////////////////////////////////
+  // Discount Engine
+  //////////////////////////////////////////////////////////
+
+  type        CouponType
+  version Int @default(1)
+  scope       CouponScope @default(ORDER_TOTAL)
+  createdById String?
+  updatedById String?
+
+  createdBy User? @relation("CouponCreatedBy", fields: [createdById], references: [id])
+  updatedBy User? @relation("CouponUpdatedBy", fields: [updatedById], references: [id])
+  priority Int @default(0)
+  internalNotes String?
+
+  /*
+  FIXED_AMOUNT => amountOff required
+  PERCENTAGE   => percentOff required
+  FREE_SHIPPING => freeShipping = true
+  */
+
+  amountOff   Decimal? @db.Decimal(12,2)
+  percentOff  Decimal? @db.Decimal(5,2)
+
+  /*
+  Example:
+  20% OFF capped at ₦15,000
+  */
+
+  maxDiscountAmount Decimal? @db.Decimal(12,2)
+
+  freeShipping Boolean @default(false)
+
+  //////////////////////////////////////////////////////////
+  // Qualification Rules
+  //////////////////////////////////////////////////////////
+
+  minimumOrderAmount Decimal? @db.Decimal(12,2)
+  minimumItemQuantity Int?
+
+  firstOrderOnly Boolean @default(false)
+
+  appliesTo CouponAppliesTo @default(ALL_PRODUCTS)
+
+  //////////////////////////////////////////////////////////
+  // Abuse Prevention
+  //////////////////////////////////////////////////////////
+
+  usageLimit   Int?
+  usedCount    Int @default(0)
+
+  perUserLimit Int @default(1)
+
+  /*
+  Prevent stacking with other promotions
+  */
+
+  isStackable Boolean @default(false)
+  excludeSaleItems Boolean @default(false)
+  /*
+  internal anti-fraud metadata
+  */
+
+  metadata Json?
+
+  //////////////////////////////////////////////////////////
+  // Audit
+  //////////////////////////////////////////////////////////
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  //////////////////////////////////////////////////////////
+  // Relations
+  //////////////////////////////////////////////////////////
+
+  productRules   CouponProductRule[]
+  categoryRules  CouponCategoryRule[]
+  customerRules  CouponCustomerRule[]
+
+  reservations   CouponReservation[]
+  usages         CouponUsage[]
+
+  orders         Order[]
+
+  @@index([status, isActive])
+  @@index([startsAt, expiresAt])
+  @@index([usedCount])
+  couponAuditLogs CouponAuditLog[]
+}
+
+//////////////////////////////////////////////////////////
+// PRODUCT TARGETING
+//////////////////////////////////////////////////////////
+
+model CouponProductRule {
+  id String @id @default(uuid())
+
+  couponId  String
+  productId String
+
+  createdAt DateTime @default(now())
+
+  coupon  Coupon  @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, productId])
+  @@index([productId])
+}
+
+//////////////////////////////////////////////////////////
+// CATEGORY TARGETING
+//////////////////////////////////////////////////////////
+
+model CouponCategoryRule {
+  id String @id @default(uuid())
+
+  couponId   String
+  categoryId String
+
+  createdAt DateTime @default(now())
+
+  coupon   Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, categoryId])
+  @@index([categoryId])
+}
+
+//////////////////////////////////////////////////////////
+// CUSTOMER TARGETING
+//////////////////////////////////////////////////////////
+
+model CouponCustomerRule {
   id String @id @default(uuid())
 
   couponId String
   userId   String
 
-  orderId String?
-
-  usedAt DateTime @default(now())
+  createdAt DateTime @default(now())
 
   coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([couponId, userId, orderId])
-  @@index([couponId, userId])
+  @@unique([couponId, userId])
+  @@index([userId])
 }
 
+//////////////////////////////////////////////////////////
+// RESERVATION LAYER
+//////////////////////////////////////////////////////////
 
+model CouponReservation {
+  id String @id @default(uuid())
+
+  couponId String
+  userId   String
+  orderId  String
+
+  status CouponReservationStatus @default(ACTIVE)
+
+  reservedDiscountAmount Decimal? @db.Decimal(12,2)
+
+  expiresAt DateTime
+  consumedAt DateTime?
+  releasedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([couponId, userId, status])
+
+  @@index([couponId, expiresAt])
+  @@index([status, expiresAt])
+  @@index([orderId])
+}
+
+//////////////////////////////////////////////////////////
+// IMMUTABLE USAGE HISTORY
+//////////////////////////////////////////////////////////
+model CouponUsage {
+  id String @id @default(uuid())
+
+  couponId String
+  userId   String
+  orderId  String @unique
+
+  status CouponUsageStatus @default(SUCCESS)
+
+  discountAmount Decimal @db.Decimal(12,2)
+  orderAmount Decimal? @db.Decimal(12,2)
+  refundedAmount Decimal? @db.Decimal(12,2)
+
+  usedAt DateTime @default(now())
+  refundedAt DateTime?
+  reversedAt DateTime?
+
+  metadata Json?
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([couponId])
+  @@index([userId])
+  @@index([status])
+  @@index([usedAt])
+}
+
+model CouponAuditLog {
+  id String @id @default(uuid())
+
+  couponId String
+  adminId  String?
+
+  action CouponLogAction
+
+  message String?
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  admin User? @relation("CouponAuditAdmin", fields: [adminId], references: [id])
+
+  @@index([couponId])
+  @@index([adminId])
+  @@index([createdAt])
+}
 //////////////////////////////////////////////////////////
 // OPERATIONS
 //////////////////////////////////////////////////////////
@@ -1028,7 +1518,7 @@ model DashboardSnapshot {
 
   date DateTime @unique
 
-  totalRevenue Decimal
+  totalRevenue Decimal @db.Decimal(12,2)
   totalOrders  Int
   totalUsers   Int
 
@@ -1099,6 +1589,34 @@ model Message {
 
   @@index([conversationId, createdAt])
 }
+model Feedback {
+  id                String   @id @default(uuid())
+  userName          String?
+  email             String
+  phoneNumber       String?
+  productName       String
+  productNumber     String?
+  usageDuration     String?
+  buyAgain          String?
+  buyingExperience  Int     @default(0)
+  concern           String?
+
+  ratings           FeedbackRating[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model FeedbackRating {
+  id          String    @id @default(uuid())
+  feedbackId  String
+  criteria    String
+  score       Int
+
+  feedback    Feedback  @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime  @default(now())
+}
 
 enum ConversationRole {
   CUSTOMER
@@ -1126,14 +1644,15 @@ enum MediaType {
 
 enum ShipmentStatus {
   PENDING
+  PROCESSING
   SHIPPED
   IN_TRANSIT
+  ARRIVED_AT_HUB
+  OUT_FOR_DELIVERY
   DELIVERED
-}
-
-enum CouponType {
-  PERCENTAGE
-  FIXED
+  FAILED
+  RETURNED
+  CANCELLED
 }
 
 enum InventoryMovementType {
@@ -1164,45 +1683,6 @@ enum PurchaseOrderStatus {
   CANCELLED
 }
 
-enum NigerianState {
-  ABIA
-  ADAMAWA
-  AKWA_IBOM
-  ANAMBRA
-  BAUCHI
-  BAYELSA
-  BENUE
-  BORNO
-  CROSS_RIVER
-  DELTA
-  EBONYI
-  EDO
-  EKITI
-  ENUGU
-  GOMBE
-  IMO
-  JIGAWA
-  KADUNA
-  KANO
-  KATSINA
-  KEBBI
-  KOGI
-  KWARA
-  LAGOS
-  NASARAWA
-  NIGER
-  OGUN
-  ONDO
-  OSUN
-  OYO
-  PLATEAU
-  RIVERS
-  SOKOTO
-  TARABA
-  YOBE
-  ZAMFARA
-  FCT
-}
 
 enum NotificationType {
   ORDER_UPDATE
@@ -1232,10 +1712,65 @@ enum StockReservationStatus {
   EXPIRED
 }
 
-
-
 enum RefundStatus {
   PENDING
   SUCCESS
   FAILED
 }
+
+enum CouponType {
+  FIXED_AMOUNT
+  PERCENTAGE
+  FREE_SHIPPING
+}
+
+enum CouponScope {
+  ORDER_TOTAL
+  SHIPPING_ONLY
+  PRODUCT_ONLY
+}
+
+enum CouponStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  EXPIRED
+  ARCHIVED
+}
+
+enum CouponAppliesTo {
+  ALL_PRODUCTS
+  SPECIFIC_PRODUCTS
+  SPECIFIC_CATEGORIES
+  SPECIFIC_CUSTOMERS
+}
+
+enum CouponReservationStatus {
+  ACTIVE
+  CONSUMED
+  EXPIRED
+  RELEASED
+}
+
+enum CouponUsageStatus {
+  SUCCESS
+  REFUNDED
+  REVERSED
+}
+
+enum PaymentProvider {
+  PAYSTACK
+  FLUTTERWAVE
+  STRIPE
+  BANK_TRANSFER
+  CASH_ON_DELIVERY
+}
+
+enum ShippingMethod {
+  STANDARD
+  EXPRESS
+  SAME_DAY
+  PICKUP_STATION
+}
+
+

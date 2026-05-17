@@ -7,16 +7,37 @@ import {
 import { normalizePhone } from "../utils/phone.utils.js";
 
 /* =========================================================
+HELPER
+========================================================= */
+
+const buildFullAddress = (data: {
+  street: string;
+  area?: string | null;
+  landmark?: string | null;
+  city: string;
+}) =>
+  [data.street, data.area, data.landmark, data.city]
+    .filter(Boolean)
+    .join(", ");
+
+/* =========================================================
 CREATE ADDRESS
 ========================================================= */
 
-export const createAddress = async (req: Request, res: Response) => {
+export const createAddress = async (
+  req: Request,
+  res: Response
+) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
-    const parsed = createAddressSchema.safeParse(req.body);
+    const parsed = createAddressSchema.safeParse(
+      req.body
+    );
 
     if (!parsed.success) {
       return res.status(400).json({
@@ -27,42 +48,51 @@ export const createAddress = async (req: Request, res: Response) => {
 
     const data = parsed.data;
 
-    const fullAddress = [
-      data.street,
-      data.area,
-      data.landmark,
-      data.city,
-      data.lga,
-      data.state,
-    ]
-    .map((v) => (typeof v === "string" ? v.trim() : v))
-    .filter(Boolean)
-    .join(", ");
+    const lga = await prisma.lGA.findFirst({
+      where: {
+        id: data.lgaId,
+        stateId: data.stateId,
+      },
+      select: { id: true },
+    });
 
-    const address = await prisma.$transaction(async (tx) => {
-      if (data.isDefault) {
-        await tx.address.updateMany({
-          where: { userId: req.user!.id },
-          data: { isDefault: false },
+    if (!lga) {
+      return res.status(400).json({
+        message:
+          "Selected LGA does not belong to selected state",
+      });
+    }
+
+    const address = await prisma.$transaction(
+      async (tx) => {
+        if (data.isDefault) {
+          await tx.address.updateMany({
+            where: {
+              userId: req.user!.id,
+            },
+            data: {
+              isDefault: false,
+            },
+          });
+        }
+
+        return tx.address.create({
+          data: {
+            userId: req.user!.id,
+            name: data.name,
+            phone: normalizePhone(data.phone),
+            stateId: data.stateId,
+            lgaId: data.lgaId,
+            city: data.city,
+            area: data.area ?? null,
+            street: data.street,
+            landmark: data.landmark ?? null,
+            fullAddress: data.fullAddress,
+            isDefault: data.isDefault ?? false,
+          },
         });
       }
-
-      return tx.address.create({
-        data: {
-          userId: req.user!.id,
-          name: data.name,
-          phone: normalizePhone(data.phone),
-          state: data.state,
-          lga: data.lga,
-          city: data.city,
-          area: data.area ?? null,
-          street: data.street,
-          landmark: data.landmark ?? null,
-          fullAddress,
-          isDefault: data.isDefault ?? false,
-        },
-      });
-    });
+    );
 
     return res.status(201).json({
       message: "Address created successfully",
@@ -71,8 +101,10 @@ export const createAddress = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Create Address Error:", error);
 
-    return res.status(400).json({
-      message: error.message || "Failed to create address",
+    return res.status(500).json({
+      message:
+        error.message ||
+        "Failed to create address",
     });
   }
 };
@@ -81,17 +113,29 @@ export const createAddress = async (req: Request, res: Response) => {
 GET MY ADDRESSES
 ========================================================= */
 
-export const getMyAddresses = async (req: Request, res: Response) => {
+export const getMyAddresses = async (
+  req: Request,
+  res: Response
+) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
     const addresses = await prisma.address.findMany({
       where: {
         userId: req.user.id,
       },
-      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
+      orderBy: [
+        { isDefault: "desc" },
+        { id: "desc" },
+      ],
+      include: {
+        state: true,
+        lga: true,
+      },
     });
 
     return res.json({ addresses });
@@ -114,7 +158,9 @@ export const getAddress = async (
 ) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
     const { id } = req.params;
@@ -123,6 +169,10 @@ export const getAddress = async (
       where: {
         id,
         userId: req.user.id,
+      },
+      include: {
+        state: true,
+        lga: true,
       },
     });
 
@@ -152,12 +202,16 @@ export const updateAddress = async (
 ) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
     const { id } = req.params;
 
-    const parsed = updateAddressSchema.safeParse(req.body);
+    const parsed = updateAddressSchema.safeParse(
+      req.body
+    );
 
     if (!parsed.success) {
       return res.status(400).json({
@@ -167,7 +221,10 @@ export const updateAddress = async (
     }
 
     const existing = await prisma.address.findFirst({
-      where: { id, userId: req.user.id },
+      where: {
+        id,
+        userId: req.user.id,
+      },
     });
 
     if (!existing) {
@@ -178,45 +235,101 @@ export const updateAddress = async (
 
     const data = parsed.data;
 
-    const fullAddress = [
-      data.street ?? existing.street,
-      data.area ?? existing.area,
-      data.landmark ?? existing.landmark,
-      data.city ?? existing.city,
-      data.lga ?? existing.lga,
-      data.state ?? existing.state,
-    ]
-      .filter(Boolean)
-      .join(", ");
+    const nextStateId =
+      data.stateId ?? existing.stateId;
+    const nextLgaId = data.lgaId ?? existing.lgaId;
 
-    const address = await prisma.$transaction(async (tx) => {
-      if (data.isDefault === true) {
-        await tx.address.updateMany({
-          where: { userId: req.user!.id },
-          data: { isDefault: false },
+    if (
+      data.stateId !== undefined ||
+      data.lgaId !== undefined
+    ) {
+      const lga = await prisma.lGA.findFirst({
+        where: {
+          id: nextLgaId,
+          stateId: nextStateId,
+        },
+        select: { id: true },
+      });
+
+      if (!lga) {
+        return res.status(400).json({
+          message:
+            "Selected LGA does not belong to selected state",
         });
       }
+    }
 
-      return tx.address.update({
-        where: { id },
-        data: {
-          ...(data.name !== undefined && { name: data.name }),
-          ...(data.phone !== undefined && {
-            phone: normalizePhone(data.phone),
-          }),
-          ...(data.state !== undefined && { state: data.state }),
-          ...(data.lga !== undefined && { lga: data.lga }),
-          ...(data.city !== undefined && { city: data.city }),
-          ...(data.area !== undefined && { area: data.area ?? null }),
-          ...(data.street !== undefined && { street: data.street }),
-          ...(data.landmark !== undefined && { landmark: data.landmark ?? null }),
-          fullAddress,
-          ...(data.isDefault !== undefined && {
-            isDefault: data.isDefault,
-          }),
-        },
-      });
+    const fullAddress = buildFullAddress({
+      street: data.street ?? existing.street,
+      area:
+        data.area !== undefined
+          ? data.area
+          : existing.area,
+      landmark:
+        data.landmark !== undefined
+          ? data.landmark
+          : existing.landmark,
+      city: data.city ?? existing.city,
     });
+
+    const address = await prisma.$transaction(
+      async (tx) => {
+        if (data.isDefault === true) {
+          await tx.address.updateMany({
+            where: {
+              userId: req.user!.id,
+            },
+            data: {
+              isDefault: false,
+            },
+          });
+        }
+
+        return tx.address.update({
+          where: { id },
+          data: {
+            ...(data.name !== undefined && {
+              name: data.name,
+            }),
+
+            ...(data.phone !== undefined && {
+              phone: normalizePhone(data.phone),
+            }),
+
+            ...(data.stateId !== undefined && {
+              stateId: data.stateId,
+            }),
+
+            ...(data.lgaId !== undefined && {
+              lgaId: data.lgaId,
+            }),
+
+            ...(data.city !== undefined && {
+              city: data.city,
+            }),
+
+            ...(data.area !== undefined && {
+              area: data.area ?? null,
+            }),
+
+            ...(data.street !== undefined && {
+              street: data.street,
+            }),
+
+            ...(data.landmark !== undefined && {
+              landmark:
+                data.landmark ?? null,
+            }),
+
+            fullAddress,
+
+            ...(data.isDefault !== undefined && {
+              isDefault: data.isDefault,
+            }),
+          },
+        });
+      }
+    );
 
     return res.json({
       message: "Address updated successfully",
@@ -225,8 +338,10 @@ export const updateAddress = async (
   } catch (error: any) {
     console.error("Update Address Error:", error);
 
-    return res.status(400).json({
-      message: error.message || "Failed to update address",
+    return res.status(500).json({
+      message:
+        error.message ||
+        "Failed to update address",
     });
   }
 };
@@ -241,7 +356,9 @@ export const deleteAddress = async (
 ) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
     const { id } = req.params;
@@ -314,6 +431,7 @@ export const setDefaultAddress = async (
           isDefault: false,
         },
       }),
+
       prisma.address.update({
         where: { id },
         data: {

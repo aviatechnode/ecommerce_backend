@@ -17,8 +17,24 @@ export const createWarehouse = async (req: Request, res: Response) => {
       });
     }
 
+    const { name, stateId, city } = parsed.data;
+
+    const stateExists = await prisma.state.findUnique({
+      where: { id: stateId },
+    });
+
+    if (!stateExists) {
+      return res.status(400).json({
+        message: "Invalid stateId",
+      });
+    }
+
     const warehouse = await prisma.warehouse.create({
-      data: parsed.data,
+      data: {
+        name,
+        stateId,
+        city,
+      },
     });
 
     return res.status(201).json({
@@ -35,6 +51,11 @@ export const createWarehouse = async (req: Request, res: Response) => {
 export const getWarehouses = async (_req: Request, res: Response) => {
   try {
     const warehouses = await prisma.warehouse.findMany({
+      include: {
+        state: true,
+        routes: true,
+        inventory: true,
+      },
       orderBy: { name: "asc" },
     });
 
@@ -48,7 +69,6 @@ export const getWarehouses = async (_req: Request, res: Response) => {
 /* ================= UPDATE ================= */
 export const updateWarehouse = async (req: Request, res: Response) => {
   try {
-    /* validate params */
     const paramsParsed = warehouseIdSchema.safeParse(req.params);
 
     if (!paramsParsed.success) {
@@ -59,7 +79,6 @@ export const updateWarehouse = async (req: Request, res: Response) => {
 
     const { id } = paramsParsed.data;
 
-    /* validate body */
     const bodyParsed = updateWarehouseSchema.safeParse(req.body);
 
     if (!bodyParsed.success) {
@@ -78,7 +97,6 @@ export const updateWarehouse = async (req: Request, res: Response) => {
       });
     }
 
-    /* IMPORTANT: remove undefined fields */
     const data = Object.fromEntries(
       Object.entries(bodyParsed.data).filter(([_, v]) => v !== undefined)
     );
@@ -114,7 +132,7 @@ export const deleteWarehouse = async (req: Request, res: Response) => {
     const existing = await prisma.warehouse.findUnique({
       where: { id },
       include: {
-        inventories: true,
+        inventory: true,
         routes: true,
       },
     });
@@ -125,7 +143,7 @@ export const deleteWarehouse = async (req: Request, res: Response) => {
       });
     }
 
-    if (existing.inventories.length > 0) {
+    if (existing.inventory.length > 0) {
       return res.status(400).json({
         message: "Cannot delete warehouse with inventory",
       });

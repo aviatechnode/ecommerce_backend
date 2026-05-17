@@ -99,7 +99,7 @@ export const signup = async (req: Request, res: Response): Promise<Response> => 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: isProd,
-      sameSite: "strict",
+      sameSite: isProd ? "none" : "lax",
       path: "/",
     });
 
@@ -217,7 +217,7 @@ export const signin = async (req: Request, res: Response): Promise<Response> => 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: isProd,
-      sameSite: "strict",
+      sameSite: isProd ? "none" : "lax",
       path: "/",
     });
 
@@ -305,7 +305,7 @@ export const refresh = async (req: Request, res: Response) => {
     res.cookie("refreshToken", newRefreshToken, {
       httpOnly: true,
       secure: isProd,
-      sameSite: "strict",
+      sameSite: isProd ? "none" : "lax",
       path: "/",
     });
 
@@ -336,7 +336,7 @@ export const signout = async (req: Request, res: Response): Promise<Response> =>
     res.clearCookie("refreshToken", {
       httpOnly: true,
       secure: isProd,
-      sameSite: "strict",
+      sameSite: isProd ? "none" : "lax",
       path: "/",
     });
 

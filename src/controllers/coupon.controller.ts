@@ -1,246 +1,358 @@
-import type { Request, Response } from "express";
-import { prisma } from "../lib/prismadb.js";
-import {
-  createCouponSchema,
-  applyCouponSchema,
-} from "../schemas/coupon.schema.js";
+import type {
+  Request,
+  Response,
+  NextFunction,
+} from "express";
 
-import { CouponType, Prisma } from "@prisma/client";
+import type {
+  CouponStatus,
+} from "@prisma/client";
 
-/* =========================================================
-UTILITY: GET REAL CART SUBTOTAL FROM DB
-========================================================= */
+import { CouponService } from "../services/coupon.service.js";
 
-const getCartSubtotal = async (userId: string) => {
-  const cart = await prisma.cart.findUnique({
-    where: { userId },
-    include: {
-      items: true,
-    },
-  });
+const couponService = new CouponService();
 
-  if (!cart || cart.items.length === 0) {
-    throw new Error("Cart is empty");
-  }
+export class CouponController {
+  //////////////////////////////////////////////////////////
+  // CREATE COUPON
+  //////////////////////////////////////////////////////////
 
-  let subtotal = new Prisma.Decimal(0);
-
-  for (const item of cart.items) {
-    subtotal = subtotal.add(
-      new Prisma.Decimal(item.unitPrice).mul(item.quantity)
-    );
-  }
-
-  return subtotal;
-};
-
-/* =========================================================
-UTILITY: VALIDATE COUPON (SAFE + DB DRIVEN)
-========================================================= */
-
-const validateCouponPublic = async ({
-  code,
-  userId,
-}: {
-  code: string;
-  userId: string;
-}) => {
-  const subtotal = await getCartSubtotal(userId);
-
-  const coupon = await prisma.coupon.findUnique({
-    where: {
-      code: code.toUpperCase(),
-    },
-  });
-
-  if (!coupon || !coupon.isActive) {
-    throw new Error("Invalid coupon");
-  }
-
-  if (coupon.expiresAt && coupon.expiresAt < new Date()) {
-    throw new Error("Coupon expired");
-  }
-
-  if (
-    coupon.usageLimit &&
-    coupon.usedCount >= coupon.usageLimit
+  async createCoupon(
+    req: Request,
+    res: Response,
+    next: NextFunction
   ) {
-    throw new Error("Coupon limit reached");
+    try {
+      //////////////////////////////////////////////////////
+      // AUTH CHECK
+      //////////////////////////////////////////////////////
+
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+      }
+
+      const adminId = req.user.id;
+
+      const coupon =
+        await couponService.createCoupon(
+          req.body,
+          adminId
+        );
+
+      return res.status(201).json({
+        success: true,
+        data: coupon,
+      });
+    } catch (err) {
+      next(err);
+    }
   }
 
-  if (
-    coupon.minOrder &&
-    subtotal.lt(coupon.minOrder)
+  //////////////////////////////////////////////////////////
+  // UPDATE COUPON
+  //////////////////////////////////////////////////////////
+
+  async updateCoupon(
+    req: Request,
+    res: Response,
+    next: NextFunction
   ) {
-    throw new Error(`Minimum order is ${coupon.minOrder}`);
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+      }
+
+      const id = String(req.params.id);
+
+      const adminId = req.user.id;
+
+      const coupon =
+        await couponService.updateCoupon(
+          id,
+          req.body,
+          adminId
+        );
+
+      return res.status(200).json({
+        success: true,
+        data: coupon,
+      });
+    } catch (err) {
+      next(err);
+    }
   }
 
-  // per-user validation
-  const usageCount = await prisma.couponUsage.count({
-    where: {
-      couponId: coupon.id,
-      userId,
-    },
-  });
+  //////////////////////////////////////////////////////////
+  // GET COUPON BY ID
+  //////////////////////////////////////////////////////////
 
-  if (
-    coupon.perUserLimit &&
-    usageCount >= coupon.perUserLimit
+  async getCouponById(
+    req: Request,
+    res: Response,
+    next: NextFunction
   ) {
-    throw new Error(
-      "Coupon usage limit reached for this user"
-    );
-  }
+    try {
+      const id = String(req.params.id);
 
-  let discount =
-    coupon.type === CouponType.FIXED
-      ? new Prisma.Decimal(coupon.value)
-      : subtotal.mul(coupon.value).div(100);
+      const coupon =
+        await couponService.getCouponById(id);
 
-  if (discount.gt(subtotal)) {
-    discount = subtotal;
-  }
+      if (!coupon) {
+        return res.status(404).json({
+          success: false,
+          message: "Coupon not found",
+        });
+      }
 
-  const finalAmount = subtotal.sub(discount);
-
-  return {
-    coupon,
-    subtotal,
-    discount,
-    finalAmount,
-  };
-};
-
-/* =========================================================
-CREATE COUPON (ADMIN)
-========================================================= */
-
-export const createCoupon = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    const parsed = createCouponSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      return res.status(400).json({
-        message: "Invalid coupon data",
-        errors: parsed.error.flatten(),
+      return res.json({
+        success: true,
+        data: coupon,
       });
+    } catch (err) {
+      next(err);
     }
-
-    const data = parsed.data;
-
-    const coupon = await prisma.coupon.create({
-      data: {
-        code: data.code,
-        type: data.type,
-        value: data.value,
-        minOrder: data.minOrder ?? null,
-        usageLimit: data.usageLimit ?? null,
-        perUserLimit: data.perUserLimit ?? null,
-        expiresAt: data.expiresAt
-          ? new Date(data.expiresAt)
-          : null,
-      },
-    });
-
-    return res.status(201).json({
-      message: "Coupon created",
-      coupon,
-    });
-  } catch (error) {
-    console.error("Create Coupon Error:", error);
-
-    return res.status(500).json({
-      message: "Failed to create coupon",
-    });
   }
-};
 
-/* =========================================================
-APPLY COUPON (PREVIEW ONLY — NO SIDE EFFECTS)
-========================================================= */
+  //////////////////////////////////////////////////////////
+  // GET COUPON BY CODE
+  //////////////////////////////////////////////////////////
 
-export const applyCoupon = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({
-        message: "Unauthorized",
+  async getCouponByCode(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const code = String(req.params.code);
+
+      const coupon =
+        await couponService.getCouponByCode(code);
+
+      if (!coupon) {
+        return res.status(404).json({
+          success: false,
+          message: "Coupon not found",
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: coupon,
       });
+    } catch (err) {
+      next(err);
     }
-
-    const parsed = applyCouponSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      return res.status(400).json({
-        message: "Invalid coupon request",
-        errors: parsed.error.flatten(),
-      });
-    }
-
-    const { code } = parsed.data;
-
-    const result = await validateCouponPublic({
-      code,
-      userId: req.user.id,
-    });
-
-    return res.json({
-      coupon: {
-        id: result.coupon.id,
-        code: result.coupon.code,
-        type: result.coupon.type,
-        value: result.coupon.value,
-      },
-      subtotal: result.subtotal,
-      discount: result.discount,
-      finalAmount: result.finalAmount,
-    });
-  } catch (error: any) {
-    return res.status(400).json({
-      message: error.message || "Coupon failed",
-    });
   }
-};
 
-/* =========================================================
-DEACTIVATE COUPON (STRICT TYPE SAFE)
-========================================================= */
+  //////////////////////////////////////////////////////////
+  // LIST COUPONS
+  //////////////////////////////////////////////////////////
 
-export const deactivateCoupon = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    const rawId = req.params.id;
+  async listCoupons(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const {
+        status,
+        isActive,
+        page,
+        limit,
+      } = req.query;
 
-    if (!rawId || Array.isArray(rawId)) {
-      return res.status(400).json({
-        message: "Invalid coupon id",
+      const filters: {
+        status?: CouponStatus;
+        isActive?: boolean;
+        page?: number;
+        limit?: number;
+      } = {};
+
+      //////////////////////////////////////////////////////
+      // STATUS
+      //////////////////////////////////////////////////////
+
+      if (typeof status === "string") {
+        filters.status =
+          status as CouponStatus;
+      }
+
+      //////////////////////////////////////////////////////
+      // IS ACTIVE
+      //////////////////////////////////////////////////////
+
+      if (typeof isActive === "string") {
+        filters.isActive =
+          isActive === "true";
+      }
+
+      //////////////////////////////////////////////////////
+      // PAGE
+      //////////////////////////////////////////////////////
+
+      if (typeof page === "string") {
+        filters.page = Number(page);
+      }
+
+      //////////////////////////////////////////////////////
+      // LIMIT
+      //////////////////////////////////////////////////////
+
+      if (typeof limit === "string") {
+        filters.limit = Number(limit);
+      }
+
+      const result =
+        await couponService.listCoupons(
+          filters
+        );
+
+      return res.json({
+        success: true,
+        ...result,
       });
+    } catch (err) {
+      next(err);
     }
-
-    await prisma.coupon.update({
-      where: {
-        id: rawId,
-      },
-      data: {
-        isActive: false,
-      },
-    });
-
-    return res.json({
-      message: "Coupon deactivated",
-    });
-  } catch (error) {
-    console.error("Deactivate Coupon Error:", error);
-
-    return res.status(500).json({
-      message: "Failed to deactivate coupon",
-    });
   }
-};
+
+  //////////////////////////////////////////////////////////
+  // VALIDATE COUPON
+  //////////////////////////////////////////////////////////
+
+  async validateCoupon(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const code = String(req.body.code);
+
+      const context = req.body.context;
+
+      const result =
+        await couponService.validateCoupon(
+          code,
+          context
+        );
+
+      return res.json({
+        success: true,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  //////////////////////////////////////////////////////////
+  // DELETE COUPON
+  //////////////////////////////////////////////////////////
+
+  async deleteCoupon(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+      }
+
+      const id = String(req.params.id);
+
+      const adminId = req.user.id;
+
+      await couponService.softDeleteCoupon(
+        id,
+        adminId
+      );
+
+      return res.json({
+        success: true,
+        message: "Coupon deleted",
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  //////////////////////////////////////////////////////////
+  // GET COUPON STATS
+  //////////////////////////////////////////////////////////
+
+  async getCouponStats(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const id = String(req.params.id);
+
+      const stats =
+        await couponService.getCouponStats(id);
+
+      return res.json({
+        success: true,
+        data: stats,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  //////////////////////////////////////////////////////////
+  // EXPIRE COUPONS
+  //////////////////////////////////////////////////////////
+
+  async expireCoupons(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const count =
+        await couponService.expireExpiredCoupons();
+
+      return res.json({
+        success: true,
+        expired: count,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  //////////////////////////////////////////////////////////
+  // RELEASE RESERVATIONS
+  //////////////////////////////////////////////////////////
+
+  async releaseReservations(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const count =
+        await couponService.releaseExpiredReservations();
+
+      return res.json({
+        success: true,
+        released: count,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+}
+
+export default new CouponController();

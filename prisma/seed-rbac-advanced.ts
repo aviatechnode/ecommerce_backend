@@ -25,10 +25,11 @@ const permissionMatrix: Record<string, readonly string[]> = {
 
   order: ["create", "read", "update", "delete"],
   payment: ["read", "update"],
-  shipment: ["read", "update"],
+  shipment: ["create", "read","update","delete",],
 
   inventory: ["read", "update"],
   warehouse: ["create", "read", "update", "delete"],
+  feedback: ["create", "read", "update", "delete"],
 
   coupon: ["create", "read", "update", "delete"],
 
@@ -75,6 +76,12 @@ const permissionGroups: Record<string, readonly string[]> = {
     "review:read",
     "review:update",
     "review:delete",
+
+    // FEED BACK IMPLEMENTATION
+    "feedback:create",
+    "feedback:read",
+    "feedback:update",
+    "feedback:delete",
   ],
 
   INVENTORY_MANAGEMENT: [
@@ -95,6 +102,8 @@ const permissionGroups: Record<string, readonly string[]> = {
 
     "shipment:read",
     "shipment:update",
+    "shipment:create",
+    "shipment:delete",
   ],
 
   PAYMENT_MANAGEMENT: [
@@ -185,7 +194,10 @@ const roleDefinitions: readonly RoleDef[] = [
       "conversation:create",
       "message:create",
       "conversation:read",
-
+      // feedback permissions
+      "feedback:create",
+      "feedback:read",
+      
       "review:create",
       "review:read",
 

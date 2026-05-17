@@ -1,22 +1,28 @@
 import type { Request, Response } from "express";
-import { resolvePermissions, hasPermission } from "../utils/rbac.js";
+import { resolvePermissions } from "../utils/rbac.js";
 import { prisma } from "../lib/prismadb.js";
 
 /* =========================================================
-   SIDEBAR CONFIG (SHARED LOGIC)
+   TYPES
 ========================================================= */
+
+export type Permission = `${string}:${string}`;
 
 export type SidebarItem = {
   label: string;
   path: string;
   icon?: string;
-  permission?: string;
+  permission?: Permission | `${string}:*` | "*";
 };
 
 export type SidebarSection = {
   title: string;
   items: SidebarItem[];
 };
+
+/* =========================================================
+   SIDEBAR CONFIG (SOURCE OF TRUTH)
+========================================================= */
 
 const adminSidebar: SidebarSection[] = [
   {
@@ -29,7 +35,7 @@ const adminSidebar: SidebarSection[] = [
       { label: "Products", path: "/admin/products", permission: "product:read" },
       { label: "Categories", path: "/admin/categories", permission: "category:read" },
       { label: "Brands", path: "/admin/brands", permission: "brand:read" },
-      {label:"Fitments", path: "/admin/fitments", permission: "fitment:read"},
+      { label: "Fitments", path: "/admin/fitments", permission: "fitment:read" },
     ],
   },
   {
@@ -66,7 +72,35 @@ const adminSidebar: SidebarSection[] = [
 ];
 
 /* =========================================================
-   GET ADMIN SIDEBAR (DYNAMIC)
+   🔥 PERMISSION ENGINE (FIXED)
+========================================================= */
+
+const checkPermission = (
+  userPermissions: string[],
+  required?: string
+): boolean => {
+  if (!required) return true;
+
+  // super admin bypass
+  if (userPermissions.includes("*")) return true;
+
+  const [resource, action] = required.split(":");
+
+  return userPermissions.some((perm) => {
+    if (perm === "*") return true;
+    if (perm === required) return true;
+
+    const [pResource, pAction] = perm.split(":");
+
+    // wildcard support: product:*
+    if (pResource === resource && pAction === "*") return true;
+
+    return false;
+  });
+};
+
+/* =========================================================
+   GET ADMIN SIDEBAR (DYNAMIC + RBAC)
 ========================================================= */
 
 export const getAdminSidebar = async (req: Request, res: Response) => {
@@ -75,21 +109,21 @@ export const getAdminSidebar = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    // 🔥 THIS IS THE FIX
-    const permissions = await resolvePermissions(req.user.roleId);
+    /**
+     * ✅ FIX: ensure array (NOT Set)
+     * resolvePermissions was returning Set before
+     */
+    const permissionsSet = await resolvePermissions(req.user.roleId);
 
-    console.log("FINAL PERMISSIONS:", [...permissions]);
+    const permissions: string[] = Array.isArray(permissionsSet)
+      ? permissionsSet
+      : Array.from(permissionsSet);
 
     const filteredSidebar: SidebarSection[] = adminSidebar
       .map((section) => {
-        const items = section.items.filter((item) => {
-          if (!item.permission) return true;
-
-          return hasPermission(
-            permissions,
-            item.permission as `${string}:${string}`
-          );
-        });
+        const items = section.items.filter((item) =>
+          checkPermission(permissions, item.permission)
+        );
 
         return { ...section, items };
       })
@@ -102,6 +136,9 @@ export const getAdminSidebar = async (req: Request, res: Response) => {
   }
 };
 
+/* =========================================================
+   HEADER DATA (UNCHANGED)
+========================================================= */
 
 export const getAdminHeaderData = async (req: Request, res: Response) => {
   try {
@@ -134,13 +171,13 @@ export const getAdminHeaderData = async (req: Request, res: Response) => {
         }),
       ]);
 
-    res.json({
+    return res.json({
       unreadNotifications,
       notifications,
       unreadMessages: unreadMessages._sum.unreadCount || 0,
     });
   } catch (error) {
     console.error("Header Error:", error);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };

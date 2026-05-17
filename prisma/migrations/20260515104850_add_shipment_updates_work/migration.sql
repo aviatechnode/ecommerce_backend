@@ -2,13 +2,13 @@
 CREATE TYPE "ConversationRole" AS ENUM ('CUSTOMER', 'ADMIN', 'SUPPORT', 'SYSTEM');
 
 -- CreateEnum
+CREATE TYPE "CouponLogAction" AS ENUM ('APPLIED', 'REJECTED', 'EXPIRED', 'LIMIT_REACHED', 'USED');
+
+-- CreateEnum
 CREATE TYPE "MediaType" AS ENUM ('IMAGE', 'VIDEO');
 
 -- CreateEnum
-CREATE TYPE "ShipmentStatus" AS ENUM ('PENDING', 'SHIPPED', 'IN_TRANSIT', 'DELIVERED');
-
--- CreateEnum
-CREATE TYPE "CouponType" AS ENUM ('PERCENTAGE', 'FIXED');
+CREATE TYPE "ShipmentStatus" AS ENUM ('PENDING', 'PROCESSING', 'SHIPPED', 'IN_TRANSIT', 'ARRIVED_AT_HUB', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED', 'RETURNED', 'CANCELLED');
 
 -- CreateEnum
 CREATE TYPE "InventoryMovementType" AS ENUM ('PURCHASE', 'SALE', 'ADJUSTMENT', 'RETURN');
@@ -20,13 +20,7 @@ CREATE TYPE "OrderStatus" AS ENUM ('PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERE
 CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'SUCCESS', 'FAILED');
 
 -- CreateEnum
-CREATE TYPE "AddressType" AS ENUM ('DELIVERY', 'BILLING');
-
--- CreateEnum
 CREATE TYPE "PurchaseOrderStatus" AS ENUM ('PENDING', 'ORDERED', 'RECEIVED', 'CANCELLED');
-
--- CreateEnum
-CREATE TYPE "NigerianState" AS ENUM ('ABIA', 'ADAMAWA', 'AKWA_IBOM', 'ANAMBRA', 'BAUCHI', 'BAYELSA', 'BENUE', 'BORNO', 'CROSS_RIVER', 'DELTA', 'EBONYI', 'EDO', 'EKITI', 'ENUGU', 'GOMBE', 'IMO', 'JIGAWA', 'KADUNA', 'KANO', 'KATSINA', 'KEBBI', 'KOGI', 'KWARA', 'LAGOS', 'NASARAWA', 'NIGER', 'OGUN', 'ONDO', 'OSUN', 'OYO', 'PLATEAU', 'RIVERS', 'SOKOTO', 'TARABA', 'YOBE', 'ZAMFARA', 'FCT');
 
 -- CreateEnum
 CREATE TYPE "NotificationType" AS ENUM ('ORDER_UPDATE', 'PAYMENT_UPDATE', 'SHIPPING_UPDATE', 'PROMOTION', 'SYSTEM');
@@ -36,6 +30,33 @@ CREATE TYPE "ConversationStatus" AS ENUM ('OPEN', 'CLOSED', 'RESOLVED');
 
 -- CreateEnum
 CREATE TYPE "MessageType" AS ENUM ('TEXT', 'IMAGE', 'FILE', 'SYSTEM');
+
+-- CreateEnum
+CREATE TYPE "StockReservationStatus" AS ENUM ('RESERVED', 'CONFIRMED', 'RELEASED', 'EXPIRED');
+
+-- CreateEnum
+CREATE TYPE "RefundStatus" AS ENUM ('PENDING', 'SUCCESS', 'FAILED');
+
+-- CreateEnum
+CREATE TYPE "CouponType" AS ENUM ('FIXED_AMOUNT', 'PERCENTAGE', 'FREE_SHIPPING');
+
+-- CreateEnum
+CREATE TYPE "CouponScope" AS ENUM ('ORDER_TOTAL', 'SHIPPING_ONLY', 'PRODUCT_ONLY');
+
+-- CreateEnum
+CREATE TYPE "CouponStatus" AS ENUM ('DRAFT', 'ACTIVE', 'PAUSED', 'EXPIRED', 'ARCHIVED');
+
+-- CreateEnum
+CREATE TYPE "CouponAppliesTo" AS ENUM ('ALL_PRODUCTS', 'SPECIFIC_PRODUCTS', 'SPECIFIC_CATEGORIES', 'SPECIFIC_CUSTOMERS');
+
+-- CreateEnum
+CREATE TYPE "CouponReservationStatus" AS ENUM ('ACTIVE', 'CONSUMED', 'EXPIRED', 'RELEASED');
+
+-- CreateEnum
+CREATE TYPE "CouponUsageStatus" AS ENUM ('SUCCESS', 'REFUNDED', 'REVERSED');
+
+-- CreateEnum
+CREATE TYPE "PaymentProvider" AS ENUM ('PAYSTACK', 'FLUTTERWAVE', 'STRIPE', 'BANK_TRANSFER', 'CASH_ON_DELIVERY');
 
 -- CreateTable
 CREATE TABLE "Role" (
@@ -133,18 +154,16 @@ CREATE TABLE "RefreshToken" (
 CREATE TABLE "Address" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "type" "AddressType" NOT NULL,
-    "street" TEXT NOT NULL,
-    "city" TEXT NOT NULL,
-    "state" "NigerianState" NOT NULL,
-    "lga" TEXT NOT NULL,
-    "landmark" TEXT,
-    "postalCode" TEXT,
+    "name" TEXT NOT NULL,
     "phone" TEXT NOT NULL,
-    "country" TEXT NOT NULL DEFAULT 'Nigeria',
-    "isDefault" BOOLEAN DEFAULT false,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "stateId" TEXT NOT NULL,
+    "lgaId" TEXT NOT NULL,
+    "city" TEXT NOT NULL,
+    "area" TEXT,
+    "street" TEXT NOT NULL,
+    "landmark" TEXT,
+    "fullAddress" TEXT NOT NULL,
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "Address_pkey" PRIMARY KEY ("id")
 );
@@ -268,6 +287,22 @@ CREATE TABLE "ProductOEM" (
 );
 
 -- CreateTable
+CREATE TABLE "ProductReview" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "title" TEXT,
+    "rating" INTEGER NOT NULL,
+    "comment" TEXT,
+    "verifiedPurchase" BOOLEAN NOT NULL DEFAULT false,
+    "isApproved" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProductReview_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "ProductSearchIndex" (
     "id" TEXT NOT NULL,
     "productId" TEXT NOT NULL,
@@ -373,18 +408,6 @@ CREATE TABLE "ProductFitment" (
 );
 
 -- CreateTable
-CREATE TABLE "Warehouse" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "state" "NigerianState" NOT NULL,
-    "city" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "Warehouse_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "ProductInventory" (
     "id" TEXT NOT NULL,
     "variantId" TEXT NOT NULL,
@@ -416,19 +439,46 @@ CREATE TABLE "StockReservation" (
     "warehouseId" TEXT NOT NULL,
     "orderId" TEXT,
     "quantity" INTEGER NOT NULL,
+    "status" "StockReservationStatus" NOT NULL DEFAULT 'RESERVED',
     "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "StockReservation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Warehouse" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "stateId" TEXT NOT NULL,
+    "city" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Warehouse_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "WarehouseRoute" (
     "id" TEXT NOT NULL,
     "warehouseId" TEXT NOT NULL,
-    "state" "NigerianState" NOT NULL,
+    "stateId" TEXT NOT NULL,
+    "lgaId" TEXT,
     "priority" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "WarehouseRoute_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "WarehouseLGA" (
+    "id" TEXT NOT NULL,
+    "warehouseId" TEXT NOT NULL,
+    "lgaId" TEXT NOT NULL,
+
+    CONSTRAINT "WarehouseLGA_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -446,7 +496,7 @@ CREATE TABLE "PurchaseOrder" (
     "id" TEXT NOT NULL,
     "supplierId" TEXT NOT NULL,
     "status" "PurchaseOrderStatus" NOT NULL,
-    "totalAmount" DECIMAL(65,30) NOT NULL,
+    "totalAmount" DECIMAL(12,2) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "PurchaseOrder_pkey" PRIMARY KEY ("id")
@@ -458,7 +508,7 @@ CREATE TABLE "PurchaseOrderItem" (
     "purchaseOrderId" TEXT NOT NULL,
     "variantId" TEXT NOT NULL,
     "quantity" INTEGER NOT NULL,
-    "costPrice" DECIMAL(65,30) NOT NULL,
+    "costPrice" DECIMAL(12,2) NOT NULL,
 
     CONSTRAINT "PurchaseOrderItem_pkey" PRIMARY KEY ("id")
 );
@@ -496,7 +546,11 @@ CREATE TABLE "Order" (
     "totalAmount" DECIMAL(12,2) NOT NULL,
     "currency" TEXT NOT NULL DEFAULT 'NGN',
     "couponId" TEXT,
+    "discountAmount" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "expiresAt" TIMESTAMP(3),
+    "cancelledAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Order_pkey" PRIMARY KEY ("id")
 );
@@ -533,11 +587,13 @@ CREATE TABLE "OrderAddress" (
     "orderId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "phone" TEXT NOT NULL,
-    "street" TEXT NOT NULL,
+    "stateId" TEXT NOT NULL,
+    "lgaId" TEXT NOT NULL,
     "city" TEXT NOT NULL,
-    "state" "NigerianState" NOT NULL,
-    "lga" TEXT NOT NULL,
-    "country" TEXT NOT NULL,
+    "area" TEXT,
+    "street" TEXT NOT NULL,
+    "landmark" TEXT,
+    "fullAddress" TEXT NOT NULL,
 
     CONSTRAINT "OrderAddress_pkey" PRIMARY KEY ("id")
 );
@@ -547,9 +603,17 @@ CREATE TABLE "Payment" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
     "reference" TEXT NOT NULL,
+    "provider" "PaymentProvider" NOT NULL,
+    "providerReference" TEXT,
+    "gatewayResponse" JSONB,
+    "failureReason" TEXT,
     "amount" DECIMAL(12,2) NOT NULL,
+    "currency" TEXT NOT NULL DEFAULT 'NGN',
     "status" "PaymentStatus" NOT NULL,
     "paidAt" TIMESTAMP(3),
+    "verifiedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Payment_pkey" PRIMARY KEY ("id")
 );
@@ -569,68 +633,91 @@ CREATE TABLE "PaymentTransaction" (
 CREATE TABLE "Refund" (
     "id" TEXT NOT NULL,
     "paymentId" TEXT NOT NULL,
-    "amount" DECIMAL(65,30) NOT NULL,
+    "amount" DECIMAL(12,2) NOT NULL,
+    "orderItemId" TEXT,
+    "quantity" INTEGER,
     "reason" TEXT,
+    "status" "RefundStatus" NOT NULL DEFAULT 'PENDING',
+    "reference" TEXT,
+    "processedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Refund_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "Courier" (
+CREATE TABLE "ReturnRequest" (
     "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "phone" TEXT,
-    "website" TEXT,
+    "orderId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "status" "RefundStatus" NOT NULL DEFAULT 'PENDING',
+    "reason" TEXT,
+    "notes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ReturnRequest_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ShipmentEvent" (
+    "id" TEXT NOT NULL,
+    "shipmentId" TEXT NOT NULL,
+    "status" "ShipmentStatus" NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "location" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "Courier_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ShipmentEvent_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "ShippingRate" (
     "id" TEXT NOT NULL,
     "courierId" TEXT NOT NULL,
-    "originState" "NigerianState" NOT NULL,
-    "destinationState" "NigerianState" NOT NULL,
+    "zoneId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "minWeight" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "maxWeight" DOUBLE PRECISION NOT NULL,
     "baseFee" DECIMAL(12,2) NOT NULL,
     "perKgFee" DECIMAL(12,2) NOT NULL,
-    "perKmFee" DECIMAL(12,2) NOT NULL,
+    "volumetricDivisor" DOUBLE PRECISION NOT NULL DEFAULT 5000,
+    "fixedFee" DECIMAL(12,2),
+    "remoteAreaSurcharge" DECIMAL(12,2),
+    "insurancePercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "estimatedDaysMin" INTEGER NOT NULL,
+    "estimatedDaysMax" INTEGER NOT NULL,
+    "supportsCOD" BOOLEAN NOT NULL DEFAULT false,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "ShippingRate_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ShippingZone" (
-    "id" TEXT NOT NULL,
-    "courierId" TEXT NOT NULL,
-    "state" "NigerianState" NOT NULL,
-    "lga" TEXT,
-
-    CONSTRAINT "ShippingZone_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "StateDistance" (
-    "id" TEXT NOT NULL,
-    "originState" "NigerianState" NOT NULL,
-    "destinationState" "NigerianState" NOT NULL,
-    "distanceKm" DOUBLE PRECISION NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "StateDistance_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "Shipment" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
-    "courierId" TEXT,
-    "trackingNo" TEXT,
-    "status" "ShipmentStatus" NOT NULL,
+    "courierId" TEXT NOT NULL,
+    "shippingRateId" TEXT,
+    "trackingNumber" TEXT NOT NULL,
+    "status" "ShipmentStatus" NOT NULL DEFAULT 'PENDING',
+    "deliveryFee" DECIMAL(12,2) NOT NULL,
+    "heavyItemSurcharge" DECIMAL(12,2),
+    "supportsCOD" BOOLEAN NOT NULL DEFAULT false,
+    "fragileFee" DECIMAL(12,2),
+    "sameDayFee" DECIMAL(12,2),
+    "weight" DOUBLE PRECISION,
+    "volumetricWeight" DOUBLE PRECISION,
+    "chargeableWeight" DOUBLE PRECISION,
+    "estimatedDays" INTEGER,
     "shippedAt" TIMESTAMP(3),
     "deliveredAt" TIMESTAMP(3),
+    "notes" TEXT,
+    "failedReason" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -638,33 +725,199 @@ CREATE TABLE "Shipment" (
 );
 
 -- CreateTable
+CREATE TABLE "Courier" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "phone" TEXT,
+    "email" TEXT,
+    "website" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Courier_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ShippingZoneLGA" (
+    "id" TEXT NOT NULL,
+    "zoneId" TEXT NOT NULL,
+    "lgaId" TEXT NOT NULL,
+
+    CONSTRAINT "ShippingZoneLGA_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ShippingZoneState" (
+    "id" TEXT NOT NULL,
+    "zoneId" TEXT NOT NULL,
+    "stateId" TEXT NOT NULL,
+
+    CONSTRAINT "ShippingZoneState_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ShippingZone" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "description" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ShippingZone_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PickupStation" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "stateId" TEXT NOT NULL,
+    "lgaId" TEXT NOT NULL,
+    "address" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PickupStation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "State" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "latitude" DOUBLE PRECISION,
+    "longitude" DOUBLE PRECISION,
+
+    CONSTRAINT "State_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "LGA" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "latitude" DOUBLE PRECISION,
+    "longitude" DOUBLE PRECISION,
+    "stateId" TEXT NOT NULL,
+
+    CONSTRAINT "LGA_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "Coupon" (
     "id" TEXT NOT NULL,
     "code" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "status" "CouponStatus" NOT NULL DEFAULT 'DRAFT',
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "startsAt" TIMESTAMP(3),
+    "expiresAt" TIMESTAMP(3),
+    "archivedAt" TIMESTAMP(3),
+    "deletedAt" TIMESTAMP(3),
     "type" "CouponType" NOT NULL,
-    "value" DECIMAL(12,2) NOT NULL,
-    "minOrder" DECIMAL(12,2),
+    "version" INTEGER NOT NULL DEFAULT 1,
+    "scope" "CouponScope" NOT NULL DEFAULT 'ORDER_TOTAL',
+    "createdById" TEXT,
+    "updatedById" TEXT,
+    "priority" INTEGER NOT NULL DEFAULT 0,
+    "internalNotes" TEXT,
+    "amountOff" DECIMAL(12,2),
+    "percentOff" DECIMAL(5,2),
+    "maxDiscountAmount" DECIMAL(12,2),
+    "freeShipping" BOOLEAN NOT NULL DEFAULT false,
+    "minimumOrderAmount" DECIMAL(12,2),
+    "minimumItemQuantity" INTEGER,
+    "firstOrderOnly" BOOLEAN NOT NULL DEFAULT false,
+    "appliesTo" "CouponAppliesTo" NOT NULL DEFAULT 'ALL_PRODUCTS',
     "usageLimit" INTEGER,
     "usedCount" INTEGER NOT NULL DEFAULT 0,
-    "expiresAt" TIMESTAMP(3),
+    "perUserLimit" INTEGER NOT NULL DEFAULT 1,
+    "isStackable" BOOLEAN NOT NULL DEFAULT false,
+    "excludeSaleItems" BOOLEAN NOT NULL DEFAULT false,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Coupon_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "ProductReview" (
+CREATE TABLE "CouponProductRule" (
     "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
+    "couponId" TEXT NOT NULL,
     "productId" TEXT NOT NULL,
-    "title" TEXT,
-    "rating" INTEGER NOT NULL,
-    "comment" TEXT,
-    "verifiedPurchase" BOOLEAN NOT NULL DEFAULT false,
-    "isApproved" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CouponProductRule_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CouponCategoryRule" (
+    "id" TEXT NOT NULL,
+    "couponId" TEXT NOT NULL,
+    "categoryId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CouponCategoryRule_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CouponCustomerRule" (
+    "id" TEXT NOT NULL,
+    "couponId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CouponCustomerRule_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CouponReservation" (
+    "id" TEXT NOT NULL,
+    "couponId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "status" "CouponReservationStatus" NOT NULL DEFAULT 'ACTIVE',
+    "reservedDiscountAmount" DECIMAL(12,2),
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "consumedAt" TIMESTAMP(3),
+    "releasedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "ProductReview_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "CouponReservation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CouponUsage" (
+    "id" TEXT NOT NULL,
+    "couponId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "status" "CouponUsageStatus" NOT NULL DEFAULT 'SUCCESS',
+    "discountAmount" DECIMAL(12,2) NOT NULL,
+    "orderAmount" DECIMAL(12,2),
+    "refundedAmount" DECIMAL(12,2),
+    "usedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "refundedAt" TIMESTAMP(3),
+    "reversedAt" TIMESTAMP(3),
+    "metadata" JSONB,
+
+    CONSTRAINT "CouponUsage_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CouponAuditLog" (
+    "id" TEXT NOT NULL,
+    "couponId" TEXT NOT NULL,
+    "adminId" TEXT,
+    "action" "CouponLogAction" NOT NULL,
+    "message" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CouponAuditLog_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -712,7 +965,7 @@ CREATE TABLE "Notification" (
 CREATE TABLE "DashboardSnapshot" (
     "id" TEXT NOT NULL,
     "date" TIMESTAMP(3) NOT NULL,
-    "totalRevenue" DECIMAL(65,30) NOT NULL,
+    "totalRevenue" DECIMAL(12,2) NOT NULL,
     "totalOrders" INTEGER NOT NULL,
     "totalUsers" INTEGER NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -760,6 +1013,35 @@ CREATE TABLE "Message" (
     CONSTRAINT "Message_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "Feedback" (
+    "id" TEXT NOT NULL,
+    "userName" TEXT,
+    "email" TEXT NOT NULL,
+    "phoneNumber" TEXT,
+    "productName" TEXT NOT NULL,
+    "productNumber" TEXT,
+    "usageDuration" TEXT,
+    "buyAgain" TEXT,
+    "buyingExperience" INTEGER NOT NULL DEFAULT 0,
+    "concern" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Feedback_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "FeedbackRating" (
+    "id" TEXT NOT NULL,
+    "feedbackId" TEXT NOT NULL,
+    "criteria" TEXT NOT NULL,
+    "score" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "FeedbackRating_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Role_name_key" ON "Role"("name");
 
@@ -782,7 +1064,19 @@ CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE UNIQUE INDEX "User_googleId_key" ON "User"("googleId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "User_verificationToken_key" ON "User"("verificationToken");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_resetPasswordToken_key" ON "User"("resetPasswordToken");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "RefreshToken_token_key" ON "RefreshToken"("token");
+
+-- CreateIndex
+CREATE INDEX "Address_userId_idx" ON "Address"("userId");
+
+-- CreateIndex
+CREATE INDEX "Address_stateId_lgaId_idx" ON "Address"("stateId", "lgaId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Wishlist_userId_key" ON "Wishlist"("userId");
@@ -836,6 +1130,15 @@ CREATE INDEX "ProductOEM_oemNumber_idx" ON "ProductOEM"("oemNumber");
 CREATE UNIQUE INDEX "ProductOEM_productId_oemNumber_key" ON "ProductOEM"("productId", "oemNumber");
 
 -- CreateIndex
+CREATE INDEX "ProductReview_productId_idx" ON "ProductReview"("productId");
+
+-- CreateIndex
+CREATE INDEX "ProductReview_rating_idx" ON "ProductReview"("rating");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductReview_userId_productId_key" ON "ProductReview"("userId", "productId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "ProductSearchIndex_productId_key" ON "ProductSearchIndex"("productId");
 
 -- CreateIndex
@@ -869,6 +1172,30 @@ CREATE UNIQUE INDEX "ProductFitment_productId_trimId_key" ON "ProductFitment"("p
 CREATE UNIQUE INDEX "ProductInventory_variantId_warehouseId_key" ON "ProductInventory"("variantId", "warehouseId");
 
 -- CreateIndex
+CREATE INDEX "StockReservation_variantId_warehouseId_idx" ON "StockReservation"("variantId", "warehouseId");
+
+-- CreateIndex
+CREATE INDEX "StockReservation_orderId_idx" ON "StockReservation"("orderId");
+
+-- CreateIndex
+CREATE INDEX "Warehouse_stateId_idx" ON "Warehouse"("stateId");
+
+-- CreateIndex
+CREATE INDEX "WarehouseRoute_warehouseId_idx" ON "WarehouseRoute"("warehouseId");
+
+-- CreateIndex
+CREATE INDEX "WarehouseRoute_stateId_idx" ON "WarehouseRoute"("stateId");
+
+-- CreateIndex
+CREATE INDEX "WarehouseRoute_lgaId_idx" ON "WarehouseRoute"("lgaId");
+
+-- CreateIndex
+CREATE INDEX "WarehouseLGA_lgaId_idx" ON "WarehouseLGA"("lgaId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "WarehouseLGA_warehouseId_lgaId_key" ON "WarehouseLGA"("warehouseId", "lgaId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Cart_userId_key" ON "Cart"("userId");
 
 -- CreateIndex
@@ -878,7 +1205,16 @@ CREATE UNIQUE INDEX "CartItem_cartId_variantId_key" ON "CartItem"("cartId", "var
 CREATE UNIQUE INDEX "Order_orderNumber_key" ON "Order"("orderNumber");
 
 -- CreateIndex
+CREATE INDEX "Order_status_paymentStatus_idx" ON "Order"("status", "paymentStatus");
+
+-- CreateIndex
+CREATE INDEX "Order_expiresAt_idx" ON "Order"("expiresAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "OrderAddress_orderId_key" ON "OrderAddress"("orderId");
+
+-- CreateIndex
+CREATE INDEX "OrderAddress_stateId_lgaId_idx" ON "OrderAddress"("stateId", "lgaId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Payment_orderId_key" ON "Payment"("orderId");
@@ -887,40 +1223,145 @@ CREATE UNIQUE INDEX "Payment_orderId_key" ON "Payment"("orderId");
 CREATE UNIQUE INDEX "Payment_reference_key" ON "Payment"("reference");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Courier_name_key" ON "Courier"("name");
+CREATE INDEX "Payment_reference_idx" ON "Payment"("reference");
 
 -- CreateIndex
-CREATE INDEX "ShippingRate_originState_destinationState_idx" ON "ShippingRate"("originState", "destinationState");
+CREATE INDEX "Payment_providerReference_idx" ON "Payment"("providerReference");
+
+-- CreateIndex
+CREATE INDEX "Payment_status_idx" ON "Payment"("status");
+
+-- CreateIndex
+CREATE INDEX "PaymentTransaction_paymentId_idx" ON "PaymentTransaction"("paymentId");
+
+-- CreateIndex
+CREATE INDEX "PaymentTransaction_eventType_idx" ON "PaymentTransaction"("eventType");
+
+-- CreateIndex
+CREATE INDEX "PaymentTransaction_createdAt_idx" ON "PaymentTransaction"("createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Refund_reference_key" ON "Refund"("reference");
+
+-- CreateIndex
+CREATE INDEX "Refund_paymentId_idx" ON "Refund"("paymentId");
+
+-- CreateIndex
+CREATE INDEX "Refund_status_idx" ON "Refund"("status");
+
+-- CreateIndex
+CREATE INDEX "Refund_createdAt_idx" ON "Refund"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "ShipmentEvent_shipmentId_idx" ON "ShipmentEvent"("shipmentId");
 
 -- CreateIndex
 CREATE INDEX "ShippingRate_courierId_idx" ON "ShippingRate"("courierId");
 
 -- CreateIndex
-CREATE INDEX "ShippingZone_state_idx" ON "ShippingZone"("state");
+CREATE INDEX "ShippingRate_zoneId_idx" ON "ShippingRate"("zoneId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "StateDistance_originState_destinationState_key" ON "StateDistance"("originState", "destinationState");
+CREATE UNIQUE INDEX "Shipment_trackingNumber_key" ON "Shipment"("trackingNumber");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Shipment_orderId_key" ON "Shipment"("orderId");
+CREATE INDEX "Shipment_orderId_idx" ON "Shipment"("orderId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Shipment_trackingNo_key" ON "Shipment"("trackingNo");
+CREATE INDEX "Shipment_trackingNumber_idx" ON "Shipment"("trackingNumber");
 
 -- CreateIndex
-CREATE INDEX "Shipment_trackingNo_idx" ON "Shipment"("trackingNo");
+CREATE INDEX "Shipment_status_idx" ON "Shipment"("status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Courier_name_key" ON "Courier"("name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ShippingZoneLGA_zoneId_lgaId_key" ON "ShippingZoneLGA"("zoneId", "lgaId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ShippingZoneState_zoneId_stateId_key" ON "ShippingZoneState"("zoneId", "stateId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ShippingZone_name_key" ON "ShippingZone"("name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ShippingZone_code_key" ON "ShippingZone"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "State_name_key" ON "State"("name");
+
+-- CreateIndex
+CREATE INDEX "LGA_stateId_idx" ON "LGA"("stateId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "LGA_stateId_name_key" ON "LGA"("stateId", "name");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Coupon_code_key" ON "Coupon"("code");
 
 -- CreateIndex
-CREATE INDEX "ProductReview_productId_idx" ON "ProductReview"("productId");
+CREATE INDEX "Coupon_status_isActive_idx" ON "Coupon"("status", "isActive");
 
 -- CreateIndex
-CREATE INDEX "ProductReview_rating_idx" ON "ProductReview"("rating");
+CREATE INDEX "Coupon_startsAt_expiresAt_idx" ON "Coupon"("startsAt", "expiresAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ProductReview_userId_productId_key" ON "ProductReview"("userId", "productId");
+CREATE INDEX "Coupon_usedCount_idx" ON "Coupon"("usedCount");
+
+-- CreateIndex
+CREATE INDEX "CouponProductRule_productId_idx" ON "CouponProductRule"("productId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CouponProductRule_couponId_productId_key" ON "CouponProductRule"("couponId", "productId");
+
+-- CreateIndex
+CREATE INDEX "CouponCategoryRule_categoryId_idx" ON "CouponCategoryRule"("categoryId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CouponCategoryRule_couponId_categoryId_key" ON "CouponCategoryRule"("couponId", "categoryId");
+
+-- CreateIndex
+CREATE INDEX "CouponCustomerRule_userId_idx" ON "CouponCustomerRule"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CouponCustomerRule_couponId_userId_key" ON "CouponCustomerRule"("couponId", "userId");
+
+-- CreateIndex
+CREATE INDEX "CouponReservation_couponId_userId_status_idx" ON "CouponReservation"("couponId", "userId", "status");
+
+-- CreateIndex
+CREATE INDEX "CouponReservation_couponId_expiresAt_idx" ON "CouponReservation"("couponId", "expiresAt");
+
+-- CreateIndex
+CREATE INDEX "CouponReservation_status_expiresAt_idx" ON "CouponReservation"("status", "expiresAt");
+
+-- CreateIndex
+CREATE INDEX "CouponReservation_orderId_idx" ON "CouponReservation"("orderId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CouponUsage_orderId_key" ON "CouponUsage"("orderId");
+
+-- CreateIndex
+CREATE INDEX "CouponUsage_couponId_idx" ON "CouponUsage"("couponId");
+
+-- CreateIndex
+CREATE INDEX "CouponUsage_userId_idx" ON "CouponUsage"("userId");
+
+-- CreateIndex
+CREATE INDEX "CouponUsage_status_idx" ON "CouponUsage"("status");
+
+-- CreateIndex
+CREATE INDEX "CouponUsage_usedAt_idx" ON "CouponUsage"("usedAt");
+
+-- CreateIndex
+CREATE INDEX "CouponAuditLog_couponId_idx" ON "CouponAuditLog"("couponId");
+
+-- CreateIndex
+CREATE INDEX "CouponAuditLog_adminId_idx" ON "CouponAuditLog"("adminId");
+
+-- CreateIndex
+CREATE INDEX "CouponAuditLog_createdAt_idx" ON "CouponAuditLog"("createdAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "IdempotencyKey_key_key" ON "IdempotencyKey"("key");
@@ -986,6 +1427,12 @@ ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_userId_fkey" FOREIGN KEY
 ALTER TABLE "Address" ADD CONSTRAINT "Address_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Address" ADD CONSTRAINT "Address_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "State"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Address" ADD CONSTRAINT "Address_lgaId_fkey" FOREIGN KEY ("lgaId") REFERENCES "LGA"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Wishlist" ADD CONSTRAINT "Wishlist_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1014,6 +1461,12 @@ ALTER TABLE "ProductSpecification" ADD CONSTRAINT "ProductSpecification_productI
 
 -- AddForeignKey
 ALTER TABLE "ProductOEM" ADD CONSTRAINT "ProductOEM_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ProductSearchIndex" ADD CONSTRAINT "ProductSearchIndex_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1058,7 +1511,31 @@ ALTER TABLE "InventoryMovement" ADD CONSTRAINT "InventoryMovement_variantId_fkey
 ALTER TABLE "InventoryMovement" ADD CONSTRAINT "InventoryMovement_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "WarehouseRoute" ADD CONSTRAINT "WarehouseRoute_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "StockReservation" ADD CONSTRAINT "StockReservation_variantId_fkey" FOREIGN KEY ("variantId") REFERENCES "ProductVariant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "StockReservation" ADD CONSTRAINT "StockReservation_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "StockReservation" ADD CONSTRAINT "StockReservation_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Warehouse" ADD CONSTRAINT "Warehouse_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "State"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "WarehouseRoute" ADD CONSTRAINT "WarehouseRoute_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "WarehouseRoute" ADD CONSTRAINT "WarehouseRoute_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "State"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "WarehouseRoute" ADD CONSTRAINT "WarehouseRoute_lgaId_fkey" FOREIGN KEY ("lgaId") REFERENCES "LGA"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "WarehouseLGA" ADD CONSTRAINT "WarehouseLGA_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "WarehouseLGA" ADD CONSTRAINT "WarehouseLGA_lgaId_fkey" FOREIGN KEY ("lgaId") REFERENCES "LGA"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PurchaseOrder" ADD CONSTRAINT "PurchaseOrder_supplierId_fkey" FOREIGN KEY ("supplierId") REFERENCES "Supplier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1094,28 +1571,106 @@ ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_variantId_fkey" FOREIGN KEY ("
 ALTER TABLE "OrderEvent" ADD CONSTRAINT "OrderEvent_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderAddress" ADD CONSTRAINT "OrderAddress_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "OrderAddress" ADD CONSTRAINT "OrderAddress_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderAddress" ADD CONSTRAINT "OrderAddress_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "State"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderAddress" ADD CONSTRAINT "OrderAddress_lgaId_fkey" FOREIGN KEY ("lgaId") REFERENCES "LGA"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Payment" ADD CONSTRAINT "Payment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShippingRate" ADD CONSTRAINT "ShippingRate_courierId_fkey" FOREIGN KEY ("courierId") REFERENCES "Courier"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "PaymentTransaction" ADD CONSTRAINT "PaymentTransaction_paymentId_fkey" FOREIGN KEY ("paymentId") REFERENCES "Payment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShippingZone" ADD CONSTRAINT "ShippingZone_courierId_fkey" FOREIGN KEY ("courierId") REFERENCES "Courier"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Refund" ADD CONSTRAINT "Refund_paymentId_fkey" FOREIGN KEY ("paymentId") REFERENCES "Payment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Shipment" ADD CONSTRAINT "Shipment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "ReturnRequest" ADD CONSTRAINT "ReturnRequest_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Shipment" ADD CONSTRAINT "Shipment_courierId_fkey" FOREIGN KEY ("courierId") REFERENCES "Courier"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ReturnRequest" ADD CONSTRAINT "ReturnRequest_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ShipmentEvent" ADD CONSTRAINT "ShipmentEvent_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ShippingRate" ADD CONSTRAINT "ShippingRate_courierId_fkey" FOREIGN KEY ("courierId") REFERENCES "Courier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShippingRate" ADD CONSTRAINT "ShippingRate_zoneId_fkey" FOREIGN KEY ("zoneId") REFERENCES "ShippingZone"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Shipment" ADD CONSTRAINT "Shipment_courierId_fkey" FOREIGN KEY ("courierId") REFERENCES "Courier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Shipment" ADD CONSTRAINT "Shipment_shippingRateId_fkey" FOREIGN KEY ("shippingRateId") REFERENCES "ShippingRate"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShippingZoneLGA" ADD CONSTRAINT "ShippingZoneLGA_zoneId_fkey" FOREIGN KEY ("zoneId") REFERENCES "ShippingZone"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShippingZoneLGA" ADD CONSTRAINT "ShippingZoneLGA_lgaId_fkey" FOREIGN KEY ("lgaId") REFERENCES "LGA"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShippingZoneState" ADD CONSTRAINT "ShippingZoneState_zoneId_fkey" FOREIGN KEY ("zoneId") REFERENCES "ShippingZone"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShippingZoneState" ADD CONSTRAINT "ShippingZoneState_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "State"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "LGA" ADD CONSTRAINT "LGA_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "State"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Coupon" ADD CONSTRAINT "Coupon_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Coupon" ADD CONSTRAINT "Coupon_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponProductRule" ADD CONSTRAINT "CouponProductRule_couponId_fkey" FOREIGN KEY ("couponId") REFERENCES "Coupon"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponProductRule" ADD CONSTRAINT "CouponProductRule_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponCategoryRule" ADD CONSTRAINT "CouponCategoryRule_couponId_fkey" FOREIGN KEY ("couponId") REFERENCES "Coupon"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponCategoryRule" ADD CONSTRAINT "CouponCategoryRule_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponCustomerRule" ADD CONSTRAINT "CouponCustomerRule_couponId_fkey" FOREIGN KEY ("couponId") REFERENCES "Coupon"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponCustomerRule" ADD CONSTRAINT "CouponCustomerRule_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponReservation" ADD CONSTRAINT "CouponReservation_couponId_fkey" FOREIGN KEY ("couponId") REFERENCES "Coupon"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponReservation" ADD CONSTRAINT "CouponReservation_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponReservation" ADD CONSTRAINT "CouponReservation_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponUsage" ADD CONSTRAINT "CouponUsage_couponId_fkey" FOREIGN KEY ("couponId") REFERENCES "Coupon"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponUsage" ADD CONSTRAINT "CouponUsage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponUsage" ADD CONSTRAINT "CouponUsage_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponAuditLog" ADD CONSTRAINT "CouponAuditLog_couponId_fkey" FOREIGN KEY ("couponId") REFERENCES "Coupon"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CouponAuditLog" ADD CONSTRAINT "CouponAuditLog_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "IdempotencyKey" ADD CONSTRAINT "IdempotencyKey_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1137,3 +1692,6 @@ ALTER TABLE "Message" ADD CONSTRAINT "Message_conversationId_fkey" FOREIGN KEY (
 
 -- AddForeignKey
 ALTER TABLE "Message" ADD CONSTRAINT "Message_senderId_fkey" FOREIGN KEY ("senderId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "FeedbackRating" ADD CONSTRAINT "FeedbackRating_feedbackId_fkey" FOREIGN KEY ("feedbackId") REFERENCES "Feedback"("id") ON DELETE CASCADE ON UPDATE CASCADE;

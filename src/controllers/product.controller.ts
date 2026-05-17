@@ -86,7 +86,9 @@ export const createProduct = async (req: Request, res: Response) => {
               width: variantData.width ?? null,
               height: variantData.height ?? null,
 
-              barcode: variantData.barcode ?? null,
+              barcode: variantData.barcode?.trim()
+                ? variantData.barcode.trim()
+                : null,
               isActive: variantData.isActive ?? true,
             },
           });

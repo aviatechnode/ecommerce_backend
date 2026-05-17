@@ -38,6 +38,8 @@ import paymentRoutes from "./routes/payment.routes.js";
 import reviewRoutes from "./routes/product.review.routes.js";
 import couponRoutes from "./routes/coupon.routes.js"
 import addressRoutes from "./routes/address.routes.js"
+import locationRoutes from "./routes/location.routes.js"
+import feedbackRoutes from "./routes/feedback.routes.js";
 
 
 dotenv.config();
@@ -65,7 +67,7 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-csrf-token"],
+    allowedHeaders: [ "Content-Type", "Authorization", "x-csrf-token", "idempotency-key",],
   })
 );
 
@@ -124,8 +126,10 @@ app.use("/api/audit-logs", auditLogRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/reviews", reviewRoutes);
-app.use("/api/coupon", couponRoutes)
+app.use("/api/coupons", couponRoutes)
 app.use("/api/address", addressRoutes)
+app.use("/api/locations", locationRoutes);
+app.use("/api/feedback", feedbackRoutes);
 
 
 /* ================= WEBHOOKS ================= */

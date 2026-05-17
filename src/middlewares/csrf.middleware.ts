@@ -57,7 +57,7 @@ export const csrfMiddleware = async (
   const newHash = hashCsrfToken(newRaw);
 
   await prisma.refreshToken.update({
-    where: { id: session.id },
+    where: { token: refreshToken },
     data: {
       csrfPrevHash: session.csrfHash, // keep last valid token
       csrfHash: newHash,
