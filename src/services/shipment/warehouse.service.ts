@@ -20,15 +20,9 @@ import {
   type UpdateWarehouseRouteInput,
 } from "../../schemas/shipment/warehouse.schema.js";
 
-/* =========================================================
-WAREHOUSE SERVICE
-========================================================= */
-
+// WAREHOUSE SERVICE
 export class WarehouseService {
-  /* =========================================================
-  CREATE WAREHOUSE
-  ========================================================= */
-
+  //CREATE WAREHOUSE
   static async createWarehouse(
     data: CreateWarehouseInput
   ) {
@@ -84,10 +78,7 @@ export class WarehouseService {
     });
   }
 
-  /* =========================================================
-  GET ALL WAREHOUSES
-  ========================================================= */
-
+ // GET ALL WAREHOUSES
   static async getAllWarehouses() {
     return prisma.warehouse.findMany({
       include: {
@@ -114,10 +105,7 @@ export class WarehouseService {
     });
   }
 
-  /* =========================================================
-  GET WAREHOUSE BY ID
-  ========================================================= */
-
+  // GET WAREHOUSE BY ID
   static async getWarehouseById(
     id: string
   ) {
@@ -165,10 +153,7 @@ export class WarehouseService {
     return warehouse;
   }
 
-  /* =========================================================
-  UPDATE WAREHOUSE
-  ========================================================= */
-
+  // UPDATE WAREHOUSE
   static async updateWarehouse(
     id: string,
     data: UpdateWarehouseInput
@@ -273,10 +258,7 @@ export class WarehouseService {
     });
   }
 
-  /* =========================================================
-  DELETE WAREHOUSE
-  ========================================================= */
-
+  // DELETE WAREHOUSE
   static async deleteWarehouse(
     id: string
   ) {
@@ -334,10 +316,7 @@ export class WarehouseService {
     });
   }
 
-  /* =========================================================
-  TOGGLE STATUS
-  ========================================================= */
-
+  // TOGGLE STATUS
   static async toggleWarehouseStatus(
     id: string
   ) {
@@ -355,10 +334,7 @@ export class WarehouseService {
     });
   }
 
-  /* =========================================================
-  ASSIGN LGA
-  ========================================================= */
-
+  // ASSIGN LGA
   static async assignLGA(
     payload: CreateWarehouseLGAInput
   ) {
@@ -428,10 +404,7 @@ export class WarehouseService {
     });
   }
 
-  /* =========================================================
-  CHECK LGA SUPPORT
-  ========================================================= */
-
+  // CHECK LGA SUPPORT
   static async supportsLGA(
     payload: WarehouseLGAUniqueInput
   ) {
@@ -457,10 +430,7 @@ export class WarehouseService {
     return Boolean(existing);
   }
 
-  /* =========================================================
-  CREATE ROUTE
-  ========================================================= */
-
+  //CREATE ROUTE
   static async createRoute(
     payload: CreateWarehouseRouteInput
   ) {
@@ -526,10 +496,7 @@ export class WarehouseService {
     });
   }
 
-  /* =========================================================
-  UPDATE ROUTE
-  ========================================================= */
-
+  // UPDATE ROUTE
   static async updateRoute(
     id: string,
     payload: UpdateWarehouseRouteInput
@@ -592,10 +559,7 @@ export class WarehouseService {
     });
   }
 
-  /* =========================================================
-  DELETE ROUTE
-  ========================================================= */
-
+  // DELETE ROUTE
   static async deleteRoute(
     id: string
   ) {

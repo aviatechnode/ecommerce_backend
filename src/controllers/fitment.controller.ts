@@ -1,63 +1,460 @@
-import type { Request, Response } from 'express';
-import { createFitment, getFitmentsByProduct, deleteFitment } from '../models/ProductFitment.js';
+import type { Request, Response } from "express";
+import { prisma } from "../lib/prismadb.js";
+import { FitmentLevel } from "@prisma/client";
+import slugify from "slugify";
 
-export const processFitments = async (req: Request, res: Response) => {
-  const { productId } = req.params;
+// CREATE MAKE
+export const createMake = async (
+  req: Request,
+  res: Response
+) => {
+  const make = await prisma.vehicleMake.create({
+    data: {
+      name: req.body.name,
+      slug:
+        req.body.slug ||
+        slugify(req.body.name, {
+          lower: true,
+          strict: true,
+        }),
+      isActive: req.body.isActive ?? true,
+    },
+  });
 
-  if (!productId || typeof productId !== 'string') {
-    return res.status(400).json({ success: false, message: 'Invalid productId' });
-  }
-
-  const { trimId, notes } = req.body;
-
-  if (!trimId || typeof trimId !== 'string') {
-    return res.status(400).json({ success: false, message: 'Invalid trimId' });
-  }
-
-  try {
-    const newFitment = await createFitment(productId, trimId, notes);
-    res.status(201).json({ success: true, data: newFitment });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'An unknown error occurred';
-    res.status(500).json({ success: false, message });
-  }
-};
-export const searchFitmentProducts = async (req: Request, res: Response) => {
-  let { productId } = req.query;
-
-  if (!productId) {
-    return res.status(400).json({ success: false, message: 'productId is required' });
-  }
-
-  if (Array.isArray(productId)) {
-    productId = productId[0];
-  }
-
-  if (typeof productId !== 'string') {
-    return res.status(400).json({ success: false, message: 'Invalid productId' });
-  }
-
-  try {
-    const fitments = await getFitmentsByProduct(productId);
-    res.status(200).json({ success: true, data: fitments });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'An unknown error occurred';
-    res.status(500).json({ success: false, message });
-  }
+  res.status(201).json(make);
 };
 
-export const removeFitment = async (req: Request, res: Response) => {
-  const { fitmentId } = req.params;
+// CREATE MODEL
+export const createModel = async (
+  req: Request,
+  res: Response
+) => {
+  const model = await prisma.vehicleModel.create({
+    data: {
+      makeId: req.body.makeId,
+      name: req.body.name,
+      slug:
+        req.body.slug ||
+        slugify(req.body.name, {
+          lower: true,
+          strict: true,
+        }),
+      isActive: req.body.isActive ?? true,
+    },
+  });
 
-  if (!fitmentId || typeof fitmentId !== 'string') {
-    return res.status(400).json({ success: false, message: 'Invalid fitmentId' });
-  }
+  res.status(201).json(model);
+};
 
-  try {
-    const deletedFitment = await deleteFitment(fitmentId);
-    res.status(200).json({ success: true, data: deletedFitment });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'An unknown error occurred';
-    res.status(500).json({ success: false, message });
-  }
+// CREATE GENERATION
+export const createGeneration = async (
+  req: Request,
+  res: Response
+) => {
+  const generation = await prisma.vehicleGeneration.create({
+    data: {
+      modelId: req.body.modelId,
+      name: req.body.name,
+      slug:
+        req.body.slug ||
+        slugify(req.body.name, {
+          lower: true,
+          strict: true,
+        }),
+      chassisCode: req.body.chassisCode,
+      yearStart: req.body.yearStart,
+      yearEnd: req.body.yearEnd,
+      isActive: req.body.isActive ?? true,
+    },
+  });
+
+  res.status(201).json(generation);
+};
+
+// CREATE ENGINE
+export const createEngine = async (
+  req: Request,
+  res: Response
+) => {
+  const engine = await prisma.vehicleEngine.create({
+    data: {
+      generationId: req.body.generationId,
+
+      engineCode: req.body.engineCode,
+
+      engineName: req.body.engineName,
+
+      fuelType: req.body.fuelType,
+
+      aspiration: req.body.aspiration,
+
+      cylinders: req.body.cylinders,
+
+      horsepower: req.body.horsepower,
+
+      displacementCc: req.body.displacementCc,
+
+      displacementLabel: req.body.displacementLabel,
+
+      drivetrain: req.body.drivetrain,
+
+      transmissionType: req.body.transmissionType,
+
+      isActive: req.body.isActive ?? true,
+    },
+  });
+
+  res.status(201).json(engine);
+};
+
+// CREATE TRIM
+export const createTrim = async (
+  req: Request,
+  res: Response
+) => {
+  const trim = await prisma.vehicleTrim.create({
+    data: {
+      engineId: req.body.engineId,
+
+      name: req.body.name,
+
+      bodyType: req.body.bodyType,
+
+      doors: req.body.doors,
+
+      isActive: req.body.isActive ?? true,
+    },
+  });
+
+  res.status(201).json(trim);
+};
+
+// ASSIGN SINGLE PRODUCT FITMENT
+export const assignProductFitment = async (
+  req: Request,
+  res: Response
+) => {
+  const fitment =
+    await prisma.productFitment.create({
+      data: {
+        productId: req.body.productId,
+
+        level: req.body.level,
+
+        makeId: req.body.makeId,
+
+        modelId: req.body.modelId,
+
+        generationId: req.body.generationId,
+
+        engineId: req.body.engineId,
+
+        trimId: req.body.trimId,
+
+        yearStart: req.body.yearStart,
+
+        yearEnd: req.body.yearEnd,
+
+        notes: req.body.notes,
+
+        position: req.body.position,
+
+        quantityRequired:
+          req.body.quantityRequired,
+
+        isUniversal:
+          req.body.isUniversal ?? false,
+      },
+    });
+
+  res.status(201).json(fitment);
+};
+
+// BULK ASSIGN PRODUCT FITMENT
+export const bulkAssignProductFitment =
+  async (
+    req: Request,
+    res: Response
+  ) => {
+    const {
+      productId,
+      trimIds,
+      notes,
+      position,
+      quantityRequired,
+    } = req.body;
+
+    const trims =
+      await prisma.vehicleTrim.findMany({
+        where: {
+          id: {
+            in: trimIds,
+          },
+        },
+        include: {
+          engine: {
+            include: {
+              generation: {
+                include: {
+                  model: {
+                    include: {
+                      make: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+    const fitments = trims.map((trim) => ({
+      productId,
+
+      level: FitmentLevel.TRIM,
+
+      makeId:
+        trim.engine.generation.model.make.id,
+
+      modelId:
+        trim.engine.generation.model.id,
+
+      generationId:
+        trim.engine.generation.id,
+
+      engineId: trim.engine.id,
+
+      trimId: trim.id,
+
+      yearStart:
+        trim.engine.generation.yearStart,
+
+      yearEnd:
+        trim.engine.generation.yearEnd,
+
+      notes,
+
+      position,
+
+      quantityRequired,
+
+      isUniversal: false,
+    }));
+
+    await prisma.productFitment.createMany({
+      data: fitments,
+      skipDuplicates: true,
+    });
+
+    // FITMENT INDEX GENERATION
+    const fitmentIndexes = [];
+
+    for (const trim of trims) {
+      const generation =
+        trim.engine.generation;
+
+      const yearEnd =
+        generation.yearEnd ||
+        generation.yearStart;
+
+      for (
+        let year = generation.yearStart;
+        year <= yearEnd;
+        year++
+      ) {
+        fitmentIndexes.push({
+          productId,
+
+          makeId:
+            generation.model.make.id,
+
+          make:
+            generation.model.make.name,
+
+          modelId:
+            generation.model.id,
+
+          model:
+            generation.model.name,
+
+          generationId:
+            generation.id,
+
+          generation: generation.name,
+
+          engineId: trim.engine.id,
+
+          engineCode:
+            trim.engine.engineCode,
+
+          trimId: trim.id,
+
+          trim: trim.name,
+
+          year,
+
+          searchableText: `
+            ${generation.model.make.name}
+            ${generation.model.name}
+            ${generation.name}
+            ${trim.engine.engineCode}
+            ${trim.name}
+            ${year}
+          `,
+        });
+      }
+    }
+
+    if (fitmentIndexes.length > 0) {
+      await prisma.fitmentIndex.createMany({
+        data: fitmentIndexes,
+        skipDuplicates: true,
+      });
+    }
+
+    res.status(201).json({
+      message:
+        "Fitments assigned successfully",
+    });
+  };
+
+// GET PRODUCTS BY FITMENT
+export const getProductsByFitment =
+  async (
+    req: Request,
+    res: Response
+  ) => {
+    const {
+      makeId,
+      modelId,
+      generationId,
+      engineId,
+      trimId,
+      year,
+    } = req.query;
+
+    const fitmentWhere: any = {};
+
+    if (makeId)
+      fitmentWhere.makeId =
+        makeId as string;
+
+    if (modelId)
+      fitmentWhere.modelId =
+        modelId as string;
+
+    if (generationId)
+      fitmentWhere.generationId =
+        generationId as string;
+
+    if (engineId)
+      fitmentWhere.engineId =
+        engineId as string;
+
+    if (trimId)
+      fitmentWhere.trimId =
+        trimId as string;
+
+    if (year) {
+      fitmentWhere.OR = [
+        {
+          yearStart: null,
+        },
+        {
+          AND: [
+            {
+              yearStart: {
+                lte: Number(year),
+              },
+            },
+            {
+              OR: [
+                {
+                  yearEnd: null,
+                },
+                {
+                  yearEnd: {
+                    gte: Number(year),
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ];
+    }
+
+    const products =
+      await prisma.product.findMany({
+        where: {
+          isActive: true,
+
+          productFitments: {
+            some: fitmentWhere,
+          },
+        },
+
+        include: {
+          brand: true,
+
+          category: true,
+
+          medias: true,
+
+          variants: {
+            include: {
+              inventories: true,
+            },
+          },
+        },
+      });
+
+    res.json(products);
+  };
+
+// GET FITMENT TREE
+export const getVehicleTree = async (
+  req: Request,
+  res: Response
+) => {
+  const makes =
+    await prisma.vehicleMake.findMany({
+      where: {
+        isActive: true,
+      },
+
+      include: {
+        models: {
+          where: {
+            isActive: true,
+          },
+
+          include: {
+            generations: {
+              where: {
+                isActive: true,
+              },
+
+              include: {
+                engines: {
+                  where: {
+                    isActive: true,
+                  },
+
+                  include: {
+                    trims: {
+                      where: {
+                        isActive: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+  res.json(makes);
 };

@@ -19,10 +19,7 @@ import {
   ensureZoneStateUnique,
 } from "../../../prisma/shippingZone.prismaChecks.js";
 
-/* =========================================================
-SHIPPING ZONE STATE SERVICE (REFINED)
-========================================================= */
-
+// SHIPPING ZONE STATE SERVICE (REFINED)
 export class ShippingZoneStateService {
   /**
    * Assign State to Shipping Zone

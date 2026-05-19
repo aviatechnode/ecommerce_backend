@@ -9,10 +9,8 @@ import {
 
 import { prisma } from "../lib/prismadb.js";
 
-//////////////////////////////////////////////////////////
-// TYPES
-//////////////////////////////////////////////////////////
 
+// TYPES
 type InitializePaymentBody = {
   orderId: string;
 };
@@ -28,20 +26,14 @@ type PaystackInitializeResponse = {
   };
 };
 
-//////////////////////////////////////////////////////////
 // HELPERS
-//////////////////////////////////////////////////////////
-
 const generatePaymentReference = (
   orderId: string
 ) => {
   return `PAY-${orderId}-${Date.now()}`;
 };
 
-//////////////////////////////////////////////////////////
 // INITIALIZE PAYMENT
-//////////////////////////////////////////////////////////
-
 export const initializePayment = async (
   req: Request<
     {},
@@ -51,10 +43,7 @@ export const initializePayment = async (
   res: Response
 ): Promise<Response> => {
   try {
-    //////////////////////////////////////////////////////
     // BODY VALIDATION
-    //////////////////////////////////////////////////////
-
     const orderId = String(req.body.orderId);
 
     if (!orderId) {
@@ -63,10 +52,7 @@ export const initializePayment = async (
       });
     }
 
-    //////////////////////////////////////////////////////
     // FETCH ORDER
-    //////////////////////////////////////////////////////
-
     const order =
       await prisma.order.findUnique({
         where: {
@@ -86,20 +72,14 @@ export const initializePayment = async (
       });
     }
 
-    //////////////////////////////////////////////////////
     // USER EMAIL REQUIRED
-    //////////////////////////////////////////////////////
-
     if (!order.user?.email) {
       return res.status(400).json({
         message: "User email missing",
       });
     }
 
-    //////////////////////////////////////////////////////
     // ORDER EXPIRATION CHECK
-    //////////////////////////////////////////////////////
-
     if (
       order.expiresAt &&
       order.expiresAt < new Date()
@@ -109,10 +89,7 @@ export const initializePayment = async (
       });
     }
 
-    //////////////////////////////////////////////////////
     // COUPON RESERVATION VALIDATION
-    //////////////////////////////////////////////////////
-
     if (order.couponId) {
       const reservation =
         await prisma.couponReservation.findFirst({
@@ -134,10 +111,7 @@ export const initializePayment = async (
       }
     }
 
-    //////////////////////////////////////////////////////
     // PAYMENT ALREADY SUCCESSFUL
-    //////////////////////////////////////////////////////
-
     if (
       order.payment &&
       order.payment.status ===
@@ -149,10 +123,7 @@ export const initializePayment = async (
       });
     }
 
-    //////////////////////////////////////////////////////
     // GENERATE REFERENCE
-    //////////////////////////////////////////////////////
-
     const reference =
       generatePaymentReference(order.id);
 
@@ -160,10 +131,7 @@ export const initializePayment = async (
       Number(order.totalAmount) * 100
     );
 
-    //////////////////////////////////////////////////////
     // UPSERT PAYMENT
-    //////////////////////////////////////////////////////
-
     const payment =
       await prisma.payment.upsert({
         where: {
@@ -201,10 +169,7 @@ export const initializePayment = async (
         },
       });
 
-    //////////////////////////////////////////////////////
     // INITIALIZE PAYSTACK
-    //////////////////////////////////////////////////////
-
     const response =
       await axios.post<PaystackInitializeResponse>(
         "https://api.paystack.co/transaction/initialize",
@@ -239,10 +204,7 @@ export const initializePayment = async (
         }
       );
 
-    //////////////////////////////////////////////////////
     // PAYSTACK FAILURE
-    //////////////////////////////////////////////////////
-
     if (!response.data.status) {
       return res.status(400).json({
         message:
@@ -251,10 +213,7 @@ export const initializePayment = async (
       });
     }
 
-    //////////////////////////////////////////////////////
     // ORDER EVENT
-    //////////////////////////////////////////////////////
-
     await prisma.orderEvent.create({
       data: {
         orderId: order.id,
@@ -272,10 +231,7 @@ export const initializePayment = async (
       },
     });
 
-    //////////////////////////////////////////////////////
     // SUCCESS RESPONSE
-    //////////////////////////////////////////////////////
-
     return res.status(200).json({
       message:
         "Payment initialized successfully",
@@ -296,10 +252,8 @@ export const initializePayment = async (
       },
     });
   } catch (error: unknown) {
-    //////////////////////////////////////////////////////
-    // AXIOS ERROR
-    //////////////////////////////////////////////////////
 
+    // AXIOS ERROR
     if (axios.isAxiosError(error)) {
       console.error(
         "Paystack error:",

@@ -12,10 +12,7 @@ import {
   assertValidRange,
 } from "../_shared/shippingValidation.helpers.js";
 
-/* =========================================================
-SHIPPING RATE SERVICE (CLEAN VERSION)
-========================================================= */
-
+ // SHIPPING RATE SERVICE (CLEAN VERSION)
 export class ShippingRateService {
   /**
    * Create Shipping Rate

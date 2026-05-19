@@ -5,10 +5,8 @@ import {
   type PermissionString,
 } from "../utils/rbac.js";
 
-/* =========================================================
-   AUTH MIDDLEWARE
-========================================================= */
 
+  // AUTH MIDDLEWARE
 export const protect = async (
   req: Request,
   res: Response,
@@ -59,10 +57,8 @@ export const protect = async (
   }
 };
 
-/* =========================================================
-   PERMISSION CHECKER
-========================================================= */
 
+  // PERMISSION CHECKER
 function hasPermission(
   permissions: Set<PermissionString>,
   required: PermissionString
@@ -76,10 +72,8 @@ function hasPermission(
   return false;
 }
 
-/* =========================================================
-   REQUIRE PERMISSION MIDDLEWARE
-========================================================= */
 
+  // REQUIRE PERMISSION MIDDLEWARE
 export const requirePermission =
   (...required: PermissionString[]) =>
   async (req: Request, res: Response, next: NextFunction) => {

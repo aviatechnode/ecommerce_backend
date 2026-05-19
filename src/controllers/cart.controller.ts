@@ -1,12 +1,17 @@
-import { shipmentService } from "../services/csl/shipping.service.js";
 import type { Request, Response } from "express";
-import { prisma } from "../lib/prismadb.js";
-import { addToCartSchema, updateQuantitySchema } from "../schemas/cart.schema.js";
+import { Prisma, ShippingMethod } from "@prisma/client";
 
-import { allocateVariantStock } from "../services/csl/warehouse-allocation.service.js";
+import { prisma } from "../lib/prismadb.js";
+
+import {
+  addToCartSchema,
+  updateQuantitySchema,
+} from "../schemas/cart.schema.js";
+
+import { PickupStationService } from "../services/shipment/pickup-station.service.js";
 
 //////////////////////////////////////////////////////////
-// CART HELPERS
+// HELPERS
 //////////////////////////////////////////////////////////
 
 async function getOrCreateCart(userId: string) {
@@ -29,140 +34,354 @@ function calculateTotals(items: any[]) {
   return { subtotal, totalItems };
 }
 
-//////////////////////////////////////////////////////////
-// CART METRICS
-//////////////////////////////////////////////////////////
+async function calculateTotalWeight(cartItems: any[]) {
+  let totalWeight = 0;
 
-function calculateCartMetrics(items: any[]) {
-  let actualWeight = 0;
-  let volumetricWeight = 0;
+  for (const item of cartItems) {
+    const weight = item.variant?.weight ?? 0;
 
-  for (const item of items) {
-    const v = item.variant;
-
-    const weight = v.weight ?? 0;
-    const length = v.length ?? 0;
-    const width = v.width ?? 0;
-    const height = v.height ?? 0;
-
-    actualWeight += weight * item.quantity;
-
-    const volume = length * width * height;
-    const volumetric = volume / 5000;
-
-    volumetricWeight += volumetric * item.quantity;
+    totalWeight += Number(weight) * item.quantity;
   }
 
-  const chargeableWeight = Math.max(actualWeight, volumetricWeight);
-
-  return {
-    actualWeight,
-    volumetricWeight,
-    chargeableWeight,
-  };
+  return totalWeight;
 }
 
 //////////////////////////////////////////////////////////
-// SHIPPING (NEW SYSTEM)
+// SHIPPING ESTIMATOR
 //////////////////////////////////////////////////////////
 
-async function calculateCartShipping(cartId: string) {
-  try {
-    const cart = await prisma.cart.findUnique({
-      where: { id: cartId },
-      include: {
-        items: {
-          include: { variant: true },
-        },
-      },
-    });
+async function estimateShipping(params: {
+  stateId: string;
+  lgaId: string;
+  shippingMethod: ShippingMethod;
+  pickupStationId?: string | null;
+  cartItems: any[];
+}) {
+  const {
+    stateId,
+    lgaId,
+    shippingMethod,
+    pickupStationId,
+    cartItems,
+  } = params;
 
-    if (!cart || cart.items.length === 0) return null;
+  //////////////////////////////////////////////////////////
+  // PICKUP STATION SHIPPING
+  //////////////////////////////////////////////////////////
 
-    // ⚠️ create temp order-like structure
-    const fakeOrder = await prisma.order.create({
-      data: {
-        orderNumber: `TEMP-${Date.now()}`,
-        userId: "temp",
-        status: "PENDING",
-        paymentStatus: "PENDING",
-        subtotal: 0,
-        deliveryFee: 0,
-        totalAmount: 0,
-        currency: "NGN",
-      },
-    });
-
-    // attach items
-    for (const item of cart.items) {
-      await prisma.orderItem.create({
-        data: {
-          orderId: fakeOrder.id,
-          variantId: item.variantId,
-          productName: "temp",
-          variantName: "temp",
-          sku: "temp",
-          unitPrice: item.unitPrice,
-          quantity: item.quantity,
-        },
-      });
+  if (
+    shippingMethod ===
+    ShippingMethod.PICKUP_STATION
+  ) {
+    if (!pickupStationId) {
+      throw new Error(
+        "pickupStationId is required"
+      );
     }
 
-    const shipping = await shipmentService.calculate(fakeOrder.id);
+    const station =
+      await PickupStationService.findById(
+        pickupStationId
+      );
 
-    // cleanup
-    await prisma.order.delete({
-      where: { id: fakeOrder.id },
+    if (!station.isActive) {
+      throw new Error(
+        "Pickup station is inactive"
+      );
+    }
+
+    return {
+      shippingMethod,
+      deliveryFee: 0,
+      estimatedDays: 0,
+      courier: station.courier,
+      pickupStation: station,
+      shippingRate: null,
+      zone: null,
+    };
+  }
+
+  //////////////////////////////////////////////////////////
+  // FIND SHIPPING ZONE
+  //////////////////////////////////////////////////////////
+
+  const zoneLga =
+    await prisma.shippingZoneLGA.findFirst({
+      where: {
+        lgaId,
+      },
+
+      include: {
+        zone: true,
+      },
     });
 
-    return shipping;
-  } catch (err) {
-    return null; // ⚠️ never crash cart because of shipping
+  const zoneState =
+    await prisma.shippingZoneState.findFirst({
+      where: {
+        stateId,
+      },
+
+      include: {
+        zone: true,
+      },
+    });
+
+  const zone =
+    zoneLga?.zone ??
+    zoneState?.zone;
+
+  if (!zone) {
+    throw new Error(
+      "No shipping zone covers this location"
+    );
   }
+
+  //////////////////////////////////////////////////////////
+  // ACTIVE COURIER
+  //////////////////////////////////////////////////////////
+
+  const activeCourier =
+    await prisma.courier.findFirst({
+      where: {
+        isActive: true,
+      },
+    });
+
+  if (!activeCourier) {
+    throw new Error(
+      "No active courier available"
+    );
+  }
+
+  //////////////////////////////////////////////////////////
+  // TOTAL WEIGHT
+  //////////////////////////////////////////////////////////
+
+  const totalWeight =
+    await calculateTotalWeight(cartItems);
+
+  //////////////////////////////////////////////////////////
+  // BEST SHIPPING RATE
+  //////////////////////////////////////////////////////////
+
+  const bestRate =
+    await prisma.shippingRate.findFirst({
+      where: {
+        courierId: activeCourier.id,
+
+        zoneId: zone.id,
+
+        isActive: true,
+
+        minWeight: {
+          lte: totalWeight,
+        },
+
+        maxWeight: {
+          gte: totalWeight,
+        },
+      },
+
+      orderBy: [
+        {
+          baseFee: "asc",
+        },
+
+        {
+          perKgFee: "asc",
+        },
+      ],
+    });
+
+  if (!bestRate) {
+    throw new Error(
+      "No shipping rate available"
+    );
+  }
+
+  //////////////////////////////////////////////////////////
+  // CALCULATE DELIVERY FEE
+  //////////////////////////////////////////////////////////
+
+  let deliveryFee =
+    new Prisma.Decimal(
+      bestRate.baseFee
+    );
+
+  if (
+    bestRate.perKgFee &&
+    totalWeight > 0
+  ) {
+    deliveryFee = deliveryFee.add(
+      new Prisma.Decimal(
+        bestRate.perKgFee
+      ).mul(totalWeight)
+    );
+  }
+
+  if (bestRate.fixedFee) {
+    deliveryFee = deliveryFee.add(
+      new Prisma.Decimal(
+        bestRate.fixedFee
+      )
+    );
+  }
+
+  return {
+    shippingMethod,
+
+    deliveryFee:
+      deliveryFee.toNumber(),
+
+    estimatedDays:
+      bestRate.estimatedDaysMin,
+
+    courier: activeCourier,
+
+    pickupStation: null,
+
+    shippingRate: bestRate,
+
+    zone,
+
+    weight: totalWeight,
+  };
 }
 
 //////////////////////////////////////////////////////////
 // GET CART
 //////////////////////////////////////////////////////////
 
-export const getMyCart = async (req: Request, res: Response) => {
+export const getMyCart = async (
+  req: Request,
+  res: Response
+) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+    const user = (req as any).user;
+
+    if (!user) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
-    const cart = await getOrCreateCart(req.user.id);
+    ////////////////////////////////////////////////////////
+    // QUERY PARAMS
+    ////////////////////////////////////////////////////////
 
-    const fullCart = await prisma.cart.findUnique({
-      where: { id: cart.id },
-      include: {
-        items: {
-          include: {
-            variant: {
-              include: {
-                product: {
-                  include: { medias: true },
+    const {
+      stateId,
+      lgaId,
+      shippingMethod,
+      pickupStationId,
+    } = req.query;
+
+    ////////////////////////////////////////////////////////
+    // CART
+    ////////////////////////////////////////////////////////
+
+    const cart =
+      await getOrCreateCart(user.id);
+
+    const fullCart =
+      await prisma.cart.findUnique({
+        where: {
+          id: cart.id,
+        },
+
+        include: {
+          items: {
+            include: {
+              variant: {
+                include: {
+                  product: {
+                    include: {
+                      medias: true,
+                    },
+                  },
                 },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    const totals = calculateTotals(fullCart?.items || []);
-    const shipping = await calculateCartShipping(cart.id);
+    const items =
+      fullCart?.items || [];
+
+    ////////////////////////////////////////////////////////
+    // TOTALS
+    ////////////////////////////////////////////////////////
+
+    const totals =
+      calculateTotals(items);
+
+    let shipping: any = null;
+
+    ////////////////////////////////////////////////////////
+    // OPTIONAL SHIPPING ESTIMATION
+    ////////////////////////////////////////////////////////
+
+    if (
+      stateId &&
+      lgaId &&
+      shippingMethod
+    ) {
+      try {
+        shipping =
+          await estimateShipping({
+            stateId: String(stateId),
+
+            lgaId: String(lgaId),
+
+            shippingMethod:
+              shippingMethod as ShippingMethod,
+
+            pickupStationId:
+              pickupStationId
+                ? String(
+                    pickupStationId
+                  )
+                : null,
+
+            cartItems: items,
+          });
+      } catch (err: any) {
+        shipping = {
+          error:
+            err?.message ||
+            "Shipping calculation failed",
+        };
+      }
+    }
+
+    ////////////////////////////////////////////////////////
+    // GRAND TOTAL
+    ////////////////////////////////////////////////////////
+
+    const grandTotal =
+      totals.subtotal +
+      (shipping?.deliveryFee || 0);
+
+    ////////////////////////////////////////////////////////
+    // RESPONSE
+    ////////////////////////////////////////////////////////
 
     return res.json({
       cart: fullCart,
+
       totals,
-      shipping: shipping?.selected ?? null,
-      grandTotal:
-        totals.subtotal +
-        (shipping?.selected?.finalFee ?? 0),
+
+      shipping,
+
+      grandTotal,
     });
   } catch (error) {
-    console.error("Get Cart Error:", error);
+    console.error(
+      "Get Cart Error:",
+      error
+    );
 
     return res.status(500).json({
       message: "Server error",
@@ -174,118 +393,136 @@ export const getMyCart = async (req: Request, res: Response) => {
 // ADD TO CART
 //////////////////////////////////////////////////////////
 
-export const addToCart = async (req: Request, res: Response) => {
+export const addToCart = async (
+  req: Request,
+  res: Response
+) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+    const user = (req as any).user;
+
+    if (!user) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
-    const parsed = addToCartSchema.safeParse(req.body);
+    const parsed =
+      addToCartSchema.safeParse(
+        req.body
+      );
 
     if (!parsed.success) {
       return res.status(400).json({
-        errors: parsed.error.format(),
+        errors:
+          parsed.error.format(),
       });
     }
 
-    const { variantId, quantity } = parsed.data;
+    const {
+      variantId,
+      quantity,
+    } = parsed.data;
 
-    const variant = await prisma.productVariant.findUnique({
-      where: { id: variantId },
-      include: {
-        product: true,
-        inventories: true,
-      },
-    });
+    const variant =
+      await prisma.productVariant.findUnique(
+        {
+          where: {
+            id: variantId,
+          },
+
+          include: {
+            product: true,
+          },
+        }
+      );
 
     if (!variant) {
-      return res.status(404).json({ message: "Variant not found" });
+      return res.status(404).json({
+        message:
+          "Variant not found",
+      });
     }
 
-    if (!variant.product.isActive || !variant.isActive) {
-      return res.status(400).json({ message: "Product inactive" });
+    if (
+      !variant.product.isActive ||
+      !variant.isActive
+    ) {
+      return res.status(400).json({
+        message:
+          "Product inactive",
+      });
     }
 
-    const address = await prisma.address.findFirst({
-      where: { userId: req.user.id, isDefault: true },
-    });
-
-    let allocations: any[] = [];
-
-    if (address) {
-      allocations = await allocateVariantStock(
-        variantId,
-        quantity,
-        address.stateId
-      );
-    } else {
-      const availableInventory = variant.inventories.find(
-        (inv) => inv.stock - (inv.reserved ?? 0) >= quantity
+    const cart =
+      await getOrCreateCart(
+        user.id
       );
 
-      if (!availableInventory) {
-        return res.status(400).json({ message: "Out of stock" });
-      }
+    const item =
+      await prisma.$transaction(
+        async (tx) => {
+          const existing =
+            await tx.cartItem.findUnique(
+              {
+                where: {
+                  cartId_variantId:
+                    {
+                      cartId:
+                        cart.id,
 
-      allocations = [
-        {
-          inventoryId: availableInventory.id,
-          quantity,
-        },
-      ];
-    }
+                      variantId,
+                    },
+                },
+              }
+            );
 
-    const cart = await getOrCreateCart(req.user.id);
+          if (existing) {
+            return tx.cartItem.update(
+              {
+                where: {
+                  id: existing.id,
+                },
 
-    const item = await prisma.$transaction(async (tx) => {
-      const existing = await tx.cartItem.findUnique({
-        where: {
-          cartId_variantId: {
-            cartId: cart.id,
-            variantId,
-          },
-        },
-      });
+                data: {
+                  quantity:
+                    existing.quantity +
+                    quantity,
+                },
+              }
+            );
+          }
 
-      for (const alloc of allocations) {
-        await tx.productInventory.update({
-          where: { id: alloc.inventoryId },
-          data: {
-            reserved: { increment: alloc.quantity },
-          },
-        });
-      }
+          return tx.cartItem.create({
+            data: {
+              cartId: cart.id,
 
-      if (existing) {
-        return tx.cartItem.update({
-          where: { id: existing.id },
-          data: {
-            quantity: existing.quantity + quantity,
-          },
-        });
-      }
+              variantId,
 
-      return tx.cartItem.create({
-        data: {
-          cartId: cart.id,
-          variantId,
-          quantity,
-          unitPrice: variant.price,
-        },
-      });
-    });
+              quantity,
+
+              unitPrice:
+                variant.price,
+            },
+          });
+        }
+      );
 
     return res.status(201).json({
-      message: "Added to cart",
+      message:
+        "Added to cart",
+
       item,
-      allocations,
-      addressUsed: !!address,
     });
   } catch (error: any) {
-    console.error("Add To Cart Error:", error);
+    console.error(
+      "Add To Cart Error:",
+      error
+    );
 
     return res.status(500).json({
-      message: error.message || "Server error",
+      message:
+        error?.message ||
+        "Server error",
     });
   }
 };
@@ -299,75 +536,72 @@ export const updateCartItem = async (
   res: Response
 ) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+    const user = (req as any).user;
+
+    if (!user) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
-    const parsed = updateQuantitySchema.safeParse(req.body);
+    const parsed =
+      updateQuantitySchema.safeParse(
+        req.body
+      );
 
     if (!parsed.success) {
       return res.status(400).json({
-        errors: parsed.error.format(),
+        errors:
+          parsed.error.format(),
       });
     }
 
-    const { quantity } = parsed.data;
+    const { quantity } =
+      parsed.data;
 
-    const item = await prisma.cartItem.findUnique({
-      where: { id: req.params.id },
-      include: {
-        cart: true,
-        variant: { include: { inventories: true } },
+    const item =
+      await prisma.cartItem.findUnique(
+        {
+          where: {
+            id: req.params.id,
+          },
+
+          include: {
+            cart: true,
+          },
+        }
+      );
+
+    if (
+      !item ||
+      item.cart.userId !==
+        user.id
+    ) {
+      return res.status(404).json({
+        message:
+          "Cart item not found",
+      });
+    }
+
+    await prisma.cartItem.update({
+      where: {
+        id: item.id,
+      },
+
+      data: {
+        quantity,
       },
     });
 
-    if (!item || item.cart.userId !== req.user.id) {
-      return res.status(404).json({
-        message: "Cart item not found",
-      });
-    }
-
-    const inventory = item.variant.inventories.find(
-      (inv) => inv.stock > 0
-    );
-
-    if (!inventory) {
-      return res.status(400).json({
-        message: "Inventory missing",
-      });
-    }
-
-    const difference = quantity - item.quantity;
-
-    if (
-      difference > 0 &&
-      inventory.stock - inventory.reserved < difference
-    ) {
-      return res.status(400).json({
-        message: "Insufficient stock",
-      });
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.productInventory.update({
-        where: { id: inventory.id },
-        data: {
-          reserved:
-            difference > 0
-              ? { increment: difference }
-              : { decrement: Math.abs(difference) },
-        },
-      });
-
-      await tx.cartItem.update({
-        where: { id: item.id },
-        data: { quantity },
-      });
+    return res.json({
+      message:
+        "Cart updated",
     });
-
-    return res.json({ message: "Cart updated" });
   } catch (error) {
-    console.error("Update Cart Error:", error);
+    console.error(
+      "Update Cart Error:",
+      error
+    );
 
     return res.status(500).json({
       message: "Server error",
@@ -384,50 +618,53 @@ export const removeCartItem = async (
   res: Response
 ) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+    const user = (req as any).user;
+
+    if (!user) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
-    const item = await prisma.cartItem.findUnique({
-      where: { id: req.params.id },
-      include: {
-        cart: true,
-        variant: { include: { inventories: true } },
+    const item =
+      await prisma.cartItem.findUnique(
+        {
+          where: {
+            id: req.params.id,
+          },
+
+          include: {
+            cart: true,
+          },
+        }
+      );
+
+    if (
+      !item ||
+      item.cart.userId !==
+        user.id
+    ) {
+      return res.status(404).json({
+        message:
+          "Cart item not found",
+      });
+    }
+
+    await prisma.cartItem.delete({
+      where: {
+        id: item.id,
       },
     });
 
-    if (!item || item.cart.userId !== req.user.id) {
-      return res.status(404).json({
-        message: "Cart item not found",
-      });
-    }
-
-    const inventory = item.variant.inventories.find(
-      (inv) => inv.stock > 0
-    );
-
-    if (!inventory) {
-      return res.status(400).json({
-        message: "Inventory missing",
-      });
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.productInventory.update({
-        where: { id: inventory.id },
-        data: {
-          reserved: { decrement: item.quantity },
-        },
-      });
-
-      await tx.cartItem.delete({
-        where: { id: item.id },
-      });
+    return res.json({
+      message:
+        "Item removed",
     });
-
-    return res.json({ message: "Item removed" });
   } catch (error) {
-    console.error("Remove Cart Error:", error);
+    console.error(
+      "Remove Cart Error:",
+      error
+    );
 
     return res.status(500).json({
       message: "Server error",
@@ -439,41 +676,51 @@ export const removeCartItem = async (
 // CLEAR CART
 //////////////////////////////////////////////////////////
 
-export const clearCart = async (req: Request, res: Response) => {
+export const clearCart = async (
+  req: Request,
+  res: Response
+) => {
   try {
-    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    const user = (req as any).user;
 
-    const cart = await prisma.cart.findUnique({
-      where: { userId: req.user.id },
-      include: {
-        items: { include: { variant: { include: { inventories: true } } } },
+    if (!user) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
+    }
+
+    const cart =
+      await prisma.cart.findUnique({
+        where: {
+          userId: user.id,
+        },
+      });
+
+    if (!cart) {
+      return res.json({
+        message:
+          "Cart already empty",
+      });
+    }
+
+    await prisma.cartItem.deleteMany({
+      where: {
+        cartId: cart.id,
       },
     });
 
-    if (!cart) return res.json({ message: "Cart already empty" });
-
-    await prisma.$transaction(async (tx) => {
-      for (const item of cart.items) {
-        const inv = item.variant.inventories[0];
-
-        if (inv) {
-          await tx.productInventory.update({
-            where: { id: inv.id },
-            data: {
-              reserved: { decrement: item.quantity },
-            },
-          });
-        }
-      }
-
-      await tx.cartItem.deleteMany({
-        where: { cartId: cart.id },
-      });
+    return res.json({
+      message:
+        "Cart cleared",
     });
-
-    return res.json({ message: "Cart cleared" });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    console.error(
+      "Clear Cart Error:",
+      error
+    );
+
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };

@@ -6,10 +6,8 @@ import {
 } from "../../schemas/shipment/shipment.event.schema.js";
 import { ShipmentStatus } from "@prisma/client";
 
-/* =========================================================
-SHIPMENT EVENT SERVICE (PRISMA STRICT SAFE)
-========================================================= */
 
+// SHIPMENT EVENT SERVICE (PRISMA STRICT SAFE)
 export class ShipmentEventService {
   /**
    * Create shipment event (tracking update)

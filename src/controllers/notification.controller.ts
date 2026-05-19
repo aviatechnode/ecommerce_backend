@@ -3,9 +3,7 @@ import { prisma } from "../lib/prismadb.js";
 import { eventBus } from "../lib/even.js";
 import { EVENTS } from "../events/types.js";
 
-/* =========================================================
-   GET USER NOTIFICATIONS
-========================================================= */
+  // GET USER NOTIFICATIONS
 export const getNotifications = async (req: Request, res: Response) => {
   try {
     if (!req.user?.id) {
@@ -25,9 +23,7 @@ export const getNotifications = async (req: Request, res: Response) => {
   }
 };
 
-/* =========================================================
-   MARK AS READ
-========================================================= */
+   // MARK AS READ
 export const markAsRead = async (req: Request, res: Response) => {
   try {
     let id = req.params.id;
@@ -48,9 +44,8 @@ export const markAsRead = async (req: Request, res: Response) => {
   }
 };
 
-/* =========================================================
-   MARK ALL AS READ
-========================================================= */
+ //  MARK ALL AS READ
+
 export const markAllAsRead = async (req: Request, res: Response) => {
   try {
     if (!req.user?.id) {
@@ -72,9 +67,7 @@ export const markAllAsRead = async (req: Request, res: Response) => {
   }
 };
 
-/* =========================================================
-   CREATE ORDER
-========================================================= */
+// CREATE ORDER
 export const createOrder = async (req: Request, res: Response) => {
   if (!req.user?.id) {
     return res.status(401).json({ message: "Unauthorized" });

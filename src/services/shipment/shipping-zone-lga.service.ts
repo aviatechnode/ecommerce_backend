@@ -10,20 +10,12 @@ import {
   type UpdateShippingZoneLGAInput,
   type ShippingZoneLGAUniqueInput,
 } from "../../schemas/shipment/shipment.zone.lga.schema.js";
-
 import { validateOrThrow } from "../../utils/validationHelpers.js";
-
 import { ensureZoneLgaUnique } from "../../../prisma/shippingZone.prismaChecks.js";
 
-/* =========================================================
-SHIPPING ZONE LGA SERVICE (REFINED)
-========================================================= */
-
+// SHIPPING ZONE LGA SERVICE (REFINED)
 export class ShippingZoneLGAService {
-  /* =========================================================
-  CREATE MAPPING
-  ========================================================= */
-
+  // CREATE MAPPING
   static async createMapping(payload: CreateShippingZoneLGAInput) {
     const parsed = await validateOrThrow(
       createShippingZoneLGASchema,
@@ -61,10 +53,7 @@ export class ShippingZoneLGAService {
     });
   }
 
-  /* =========================================================
-  GET ALL
-  ========================================================= */
-
+  // GET ALL
   static async getAllMappings() {
     return prisma.shippingZoneLGA.findMany({
       include: {
@@ -77,10 +66,7 @@ export class ShippingZoneLGAService {
     });
   }
 
-  /* =========================================================
-  GET BY ID
-  ========================================================= */
-
+  // GET BY ID
   static async getMappingById(id: string) {
     const parsed = await validateOrThrow(
       shippingZoneLGAIdParamSchema,
@@ -102,10 +88,7 @@ export class ShippingZoneLGAService {
     return mapping;
   }
 
-  /* =========================================================
-  UPDATE
-  ========================================================= */
-
+  // UPDATE
   static async updateMapping(
     id: string,
     payload: UpdateShippingZoneLGAInput
@@ -173,10 +156,7 @@ export class ShippingZoneLGAService {
     });
   }
 
-  /* =========================================================
-  DELETE
-  ========================================================= */
-
+  // DELETE
   static async deleteMapping(id: string) {
     const parsed = await validateOrThrow(
       shippingZoneLGAIdParamSchema,
@@ -194,10 +174,7 @@ export class ShippingZoneLGAService {
     });
   }
 
-  /* =========================================================
-  CHECK RELATION
-  ========================================================= */
-
+  // CHECK RELATION
   static async isLgaInZone(payload: ShippingZoneLGAUniqueInput) {
     const parsed = await validateOrThrow(
       shippingZoneLGAUniqueSchema,
@@ -216,10 +193,7 @@ export class ShippingZoneLGAService {
     return Boolean(mapping);
   }
 
-  /* =========================================================
-  BULK ASSIGN
-  ========================================================= */
-
+  // BULK ASSIGN
   static async bulkAssignLGAs(payload: {
     zoneId: string;
     lgaIds: string[];
@@ -265,10 +239,7 @@ export class ShippingZoneLGAService {
     });
   }
 
-  /* =========================================================
-  CLEAR ZONE
-  ========================================================= */
-
+  // CLEAR ZONE
   static async clearZone(zoneId: string) {
     const zone = await prisma.shippingZone.findUnique({
       where: { id: zoneId },
@@ -282,10 +253,7 @@ export class ShippingZoneLGAService {
     });
   }
 
-  /* =========================================================
-  GET BY ZONE
-  ========================================================= */
-
+  // GET BY ZONE
   static async getLGAsByZone(zoneId: string) {
     createShippingZoneLGASchema.shape.zoneId.parse(zoneId);
 
@@ -298,10 +266,8 @@ export class ShippingZoneLGAService {
     });
   }
 
-  /* =========================================================
-  GET BY LGA
-  ========================================================= */
-
+  
+  // GET BY LGA
   static async getZonesByLGA(lgaId: string) {
     createShippingZoneLGASchema.shape.lgaId.parse(lgaId);
 

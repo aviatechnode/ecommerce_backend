@@ -6,4 +6,6 @@ declare module "express-serve-static-core" {
   }
 }
 
+export type TypedRequest<TParams = {}, TBody = {}, TQuery = {}> =
+  Request<TParams, any, TBody, TQuery>;
 export {};

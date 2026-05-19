@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prismadb.js";
 import { Prisma } from "@prisma/client";
+
 import {
   createCategorySchema,
   updateCategorySchema,
@@ -10,6 +11,8 @@ import {
   generateSlug,
   generateUniqueSlug,
 } from "../helpers/generate.slug.helper.js";
+
+import { AuditLogService } from "../services/auditlog.service.js";
 
 //////////////////////////////////////////////////////////
 // TYPES
@@ -86,6 +89,25 @@ export const createCategory = async (req: Request, res: Response) => {
         ...(parentId
           ? { parent: { connect: { id: parentId } } }
           : {}),
+      },
+    });
+
+    //////////////////////////////////////////////////////////
+    // AUDIT LOG
+    //////////////////////////////////////////////////////////
+
+    await AuditLogService.create({
+      userId: req.user?.id, // assuming auth middleware
+      action: "CREATE_CATEGORY",
+      entity: "Category",
+      entityId: category.id,
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+
+      metadata: {
+        name: category.name,
+        slug: category.slug,
+        type: category.type,
       },
     });
 
@@ -282,6 +304,8 @@ export const updateCategory = async (req: Request, res: Response) => {
       parentId,
     } = parsed.data;
 
+    const oldData = { ...existing };
+
     const data: Prisma.CategoryUpdateInput = {};
 
     if (name && name !== existing.name) {
@@ -327,6 +351,24 @@ export const updateCategory = async (req: Request, res: Response) => {
     const category = await prisma.category.update({
       where: { id },
       data,
+    });
+
+    //////////////////////////////////////////////////////////
+    // AUDIT LOG
+    //////////////////////////////////////////////////////////
+
+    await AuditLogService.create({
+      userId: req.user?.id,
+      action: "UPDATE_CATEGORY",
+      entity: "Category",
+      entityId: category.id,
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+
+      metadata: {
+        before: oldData,
+        after: category,
+      },
     });
 
     return res.json({
@@ -380,6 +422,23 @@ export const deleteCategory = async (req: Request, res: Response) => {
 
     await prisma.category.delete({
       where: { id },
+    });
+
+    //////////////////////////////////////////////////////////
+    // AUDIT LOG
+    //////////////////////////////////////////////////////////
+
+    await AuditLogService.create({
+      userId: req.user?.id,
+      action: "DELETE_CATEGORY",
+      entity: "Category",
+      entityId: category.id,
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+
+      metadata: {
+        deletedCategory: category,
+      },
     });
 
     return res.json({

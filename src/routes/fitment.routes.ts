@@ -1,17 +1,52 @@
-// ====================== routes/productFitment.routes.ts ======================
+import { Router } from "express";
 
-import { Router } from 'express';
-import { processFitments, removeFitment, searchFitmentProducts } from '../controllers/fitment.controller.js';
+import {
+  assignProductFitment,
+  bulkAssignProductFitment,
+  createEngine,
+  createGeneration,
+  createMake,
+  createModel,
+  createTrim,
+  getProductsByFitment,
+  getVehicleTree,
+} from "../controllers/fitment.controller.js";
 
 const router = Router();
 
-// Create a new fitment for a product
-router.post('/:productId', processFitments);
+// VEHICLE TREE
+router.post("/makes", createMake);
 
-// Get fitments for a product
-router.get('/', searchFitmentProducts);
+router.post("/models", createModel);
 
-// Delete a fitment
-router.delete('/:fitmentId', removeFitment);
+router.post("/generations", createGeneration);
+
+router.post("/engines", createEngine);
+
+router.post("/trims", createTrim);
+
+// Assign single fitment
+router.post(
+  "/products/assign",
+  assignProductFitment
+);
+
+// Bulk assign fitments using trimIds
+router.post(
+  "/products/bulk-assign",
+  bulkAssignProductFitment
+);
+
+// Get products by fitment filters
+router.get(
+  "/products",
+  getProductsByFitment
+);
+
+// Full nested make → model → generation → engine → trim tree
+router.get(
+  "/tree",
+  getVehicleTree
+);
 
 export default router;

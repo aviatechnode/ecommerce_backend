@@ -6,58 +6,63 @@ import {
   PaymentStatus,
   CouponType,
   CouponStatus,
+  ShippingMethod,
+  ShipmentStatus,
 } from "@prisma/client";
 
 import { checkoutSchema } from "../schemas/checkout.schema.js";
 import { createAddressSchema } from "../schemas/address.schema.js";
-
-import { ShipmentService } from "../services/shipment/shipment.service.js";
-import { ShippingCalculatorService } from "../services/shipment/shipping-calculator.service.js";
-import { DistanceService } from "../services/shipment/distance.service.js";
-
 import { normalizePhone } from "../utils/phone.utils.js";
+import { ShipmentService } from "../services/shipment/shipment.service.js";
+import type { CreateShipmentInput } from "../schemas/shipment/shipment.schema.js";
 
-/* ======================================================
-INIT SERVICES
-====================================================== */
-const shipmentService = new ShipmentService(prisma);
-const distanceService = new DistanceService(prisma);
-const shippingCalculatorService =
-  new ShippingCalculatorService(
-    prisma,
-    distanceService
-  );
+// ======================================================
+// HELPERS
+// ======================================================
 
-/* ======================================================
-ORDER NUMBER GENERATOR
-====================================================== */
 function generateOrderNumber() {
   return `ORD-${Date.now()}`;
 }
 
+function generateTrackingNumber() {
+  return `TRK-${Date.now()}-${Math.floor(
+    1000 + Math.random() * 9000
+  )}`;
+}
+
 const RESERVATION_TTL_MINUTES = 15;
 
-/* ======================================================
-HELPER
-====================================================== */
 const buildFullAddress = (a: any) =>
   `${a.street}, ${a.city}`;
 
-/* ======================================================
-CHECKOUT CONTROLLER
-====================================================== */
+async function calculateTotalWeight(cartItems: any[]) {
+  let totalWeight = 0;
+
+  for (const item of cartItems) {
+    const weight = item.variant?.weight ?? 0;
+    totalWeight += Number(weight) * item.quantity;
+  }
+
+  return totalWeight;
+}
+
+// ======================================================
+// CHECKOUT CONTROLLER
+// ======================================================
+
 export const checkout = async (
   req: Request,
   res: Response
 ) => {
   try {
-    /* ======================================================
-    AUTH
-    ====================================================== */
+    // ==================================================
+    // AUTH
+    // ==================================================
+
     if (!req.user) {
-      return res.status(401).json({
-        message: "Unauthorized",
-      });
+      return res
+        .status(401)
+        .json({ message: "Unauthorized" });
     }
 
     if (!req.idempotencyKey) {
@@ -68,12 +73,11 @@ export const checkout = async (
 
     const userId = req.user.id;
 
-    /* ======================================================
-    VALIDATE REQUEST
-    ====================================================== */
-    const parsed = checkoutSchema.safeParse(
-      req.body
-    );
+    // ==================================================
+    // VALIDATION
+    // ==================================================
+
+    const parsed = checkoutSchema.safeParse(req.body);
 
     if (!parsed.success) {
       return res.status(400).json({
@@ -82,20 +86,28 @@ export const checkout = async (
       });
     }
 
-    const { couponCode, address } =
-      parsed.data;
+    const {
+      couponCode,
+      address,
+      shippingMethod,
+      pickupStationId,
+      paymentProvider,
+    } = parsed.data;
 
-    const addressId = req.body
-      .addressId as string | undefined;
+    const addressId = req.body.addressId as
+      | string
+      | undefined;
 
-    /* ======================================================
-    TRANSACTION
-    ====================================================== */
+    // ==================================================
+    // TRANSACTION
+    // ==================================================
+
     const result = await prisma.$transaction(
       async (tx) => {
-        /* ======================================================
-        IDEMPOTENCY
-        ====================================================== */
+        // ==============================================
+        // IDEMPOTENCY
+        // ==============================================
+
         const existingKey =
           await tx.idempotencyKey.findUnique({
             where: {
@@ -110,13 +122,12 @@ export const checkout = async (
           };
         }
 
-        /* ======================================================
-        CART
-        ====================================================== */
+        // ==============================================
+        // CART
+        // ==============================================
+
         const cart = await tx.cart.findUnique({
-          where: {
-            userId,
-          },
+          where: { userId },
           include: {
             items: {
               include: {
@@ -130,16 +141,14 @@ export const checkout = async (
           },
         });
 
-        if (
-          !cart ||
-          cart.items.length === 0
-        ) {
+        if (!cart || cart.items.length === 0) {
           throw new Error("Cart is empty");
         }
 
-        /* ======================================================
-        ADDRESS
-        ====================================================== */
+        // ==============================================
+        // ADDRESS RESOLUTION
+        // ==============================================
+
         let resolvedAddress: any;
 
         if (addressId) {
@@ -152,49 +161,33 @@ export const checkout = async (
             });
 
           if (!resolvedAddress) {
-            throw new Error(
-              "Invalid address"
-            );
+            throw new Error("Invalid address");
           }
         } else if (address) {
           const parsedAddress =
-            createAddressSchema.safeParse(
-              address
-            );
+            createAddressSchema.safeParse(address);
 
           if (!parsedAddress.success) {
-            throw new Error(
-              "Invalid address data"
-            );
+            throw new Error("Invalid address data");
           }
 
-          const addr =
-            parsedAddress.data;
+          const addr = parsedAddress.data;
 
-          resolvedAddress =
-            await tx.address.create({
-              data: {
-                userId,
-                name: addr.name,
-                phone: normalizePhone(
-                  addr.phone
-                ),
-                stateId: addr.stateId,
-                lgaId: addr.lgaId,
-                city: addr.city,
-                area:
-                  addr.area ?? null,
-                street: addr.street,
-                landmark:
-                  addr.landmark ??
-                  null,
-                fullAddress:
-                  buildFullAddress(
-                    addr
-                  ),
-                isDefault: false,
-              },
-            });
+          resolvedAddress = await tx.address.create({
+            data: {
+              userId,
+              name: addr.name,
+              phone: normalizePhone(addr.phone),
+              stateId: addr.stateId,
+              lgaId: addr.lgaId,
+              city: addr.city,
+              area: addr.area ?? null,
+              street: addr.street,
+              landmark: addr.landmark ?? null,
+              fullAddress: buildFullAddress(addr),
+              isDefault: false,
+            },
+          });
         } else {
           resolvedAddress =
             await tx.address.findFirst({
@@ -211,29 +204,25 @@ export const checkout = async (
           }
         }
 
-        /* ======================================================
-        SUBTOTAL + ORDER ITEMS
-        ====================================================== */
-        let subtotal =
-          new Prisma.Decimal(0);
+        // ==============================================
+        // SUBTOTAL & ORDER ITEMS
+        // ==============================================
+
+        let subtotal = new Prisma.Decimal(0);
 
         const orderItems: Prisma.OrderItemCreateWithoutOrderInput[] =
           [];
 
         for (const item of cart.items) {
-          const variant =
-            item.variant;
+          const variant = item.variant;
 
           if (!variant) {
-            throw new Error(
-              "Variant missing"
-            );
+            throw new Error("Variant missing");
           }
 
-          const price =
-            new Prisma.Decimal(
-              variant.price
-            );
+          const price = new Prisma.Decimal(
+            variant.price
+          );
 
           subtotal = subtotal.add(
             price.mul(item.quantity)
@@ -245,43 +234,35 @@ export const checkout = async (
                 id: variant.id,
               },
             },
-            productName:
-              variant.product.name,
-            variantName:
-              variant.name,
+
+            productName: variant.product.name,
+            variantName: variant.name,
             sku: variant.sku,
             unitPrice: price,
-            quantity:
-              item.quantity,
+            quantity: item.quantity,
           });
         }
 
-        /* ======================================================
-        COUPON
-        ====================================================== */
-        let discount =
-          new Prisma.Decimal(0);
+        // ==============================================
+        // COUPON
+        // ==============================================
 
-        let appliedCouponId:
-          | string
-          | null = null;
+        let discount = new Prisma.Decimal(0);
 
-        let appliedCoupon: any =
-          null;
+        let appliedCouponId: string | null = null;
+
+        let appliedCoupon: any = null;
 
         if (couponCode) {
           appliedCoupon =
             await tx.coupon.findUnique({
               where: {
-                code:
-                  couponCode.toUpperCase(),
+                code: couponCode.toUpperCase(),
               },
             });
 
           if (!appliedCoupon) {
-            throw new Error(
-              "Invalid coupon"
-            );
+            throw new Error("Invalid coupon");
           }
 
           if (
@@ -289,18 +270,14 @@ export const checkout = async (
               CouponStatus.ACTIVE ||
             !appliedCoupon.isActive
           ) {
-            throw new Error(
-              "Coupon is inactive"
-            );
+            throw new Error("Coupon is inactive");
           }
 
-          const now =
-            new Date();
+          const now = new Date();
 
           if (
             appliedCoupon.startsAt &&
-            appliedCoupon.startsAt >
-              now
+            appliedCoupon.startsAt > now
           ) {
             throw new Error(
               "Coupon not started"
@@ -309,12 +286,9 @@ export const checkout = async (
 
           if (
             appliedCoupon.expiresAt &&
-            appliedCoupon.expiresAt <
-              now
+            appliedCoupon.expiresAt < now
           ) {
-            throw new Error(
-              "Coupon expired"
-            );
+            throw new Error("Coupon expired");
           }
 
           if (
@@ -328,25 +302,19 @@ export const checkout = async (
             );
           }
 
-          switch (
-            appliedCoupon.type
-          ) {
+          switch (appliedCoupon.type) {
             case CouponType.FIXED_AMOUNT:
-              discount =
-                new Prisma.Decimal(
-                  appliedCoupon.amountOff ??
-                    0
-                );
+              discount = new Prisma.Decimal(
+                appliedCoupon.amountOff ?? 0
+              );
               break;
 
             case CouponType.PERCENTAGE:
-              discount =
-                subtotal
-                  .mul(
-                    appliedCoupon.percentOff ??
-                      0
-                  )
-                  .div(100);
+              discount = subtotal
+                .mul(
+                  appliedCoupon.percentOff ?? 0
+                )
+                .div(100);
 
               if (
                 appliedCoupon.maxDiscountAmount &&
@@ -354,287 +322,501 @@ export const checkout = async (
                   appliedCoupon.maxDiscountAmount
                 )
               ) {
-                discount =
-                  new Prisma.Decimal(
-                    appliedCoupon.maxDiscountAmount
-                  );
+                discount = new Prisma.Decimal(
+                  appliedCoupon.maxDiscountAmount
+                );
               }
+
               break;
 
             case CouponType.FREE_SHIPPING:
-              discount =
-                new Prisma.Decimal(
-                  0
-                );
+              discount = new Prisma.Decimal(0);
               break;
-
-            default:
-              discount =
-                new Prisma.Decimal(
-                  0
-                );
           }
 
-          if (
-            discount.gt(
-              subtotal
-            )
-          ) {
+          if (discount.gt(subtotal)) {
             discount = subtotal;
           }
 
-          appliedCouponId =
-            appliedCoupon.id;
+          appliedCouponId = appliedCoupon.id;
         }
 
-        /* ======================================================
-        CREATE ORDER
-        ====================================================== */
-        const expiresAt =
-          new Date(
-            Date.now() +
-              RESERVATION_TTL_MINUTES *
-                60 *
-                1000
-          );
+        // ==============================================
+        // CREATE ORDER
+        // ==============================================
 
-        const order =
-          await tx.order.create({
-            data: {
-              orderNumber:
-                generateOrderNumber(),
-              userId,
+        const expiresAt = new Date(
+          Date.now() +
+            RESERVATION_TTL_MINUTES *
+              60 *
+              1000
+        );
 
-              status:
-                "PENDING",
-              paymentStatus:
-                "PENDING",
-
-              subtotal,
-              discountAmount:
-                discount,
-              deliveryFee:
-                new Prisma.Decimal(
-                  0
-                ),
-
-              totalAmount:
-                subtotal.sub(
-                  discount
-                ),
-
-              currency: "NGN",
-
-              couponId:
-                appliedCouponId,
-
-              expiresAt,
-
-              items: {
-                create:
-                  orderItems,
-              },
-
-              address: {
-                create: {
-                  name:
-                    resolvedAddress.name,
-                  phone:
-                    resolvedAddress.phone,
-                  stateId:
-                    resolvedAddress.stateId,
-                  lgaId:
-                    resolvedAddress.lgaId,
-                  city:
-                    resolvedAddress.city,
-                  area:
-                    resolvedAddress.area ??
-                    null,
-                  street:
-                    resolvedAddress.street,
-                  landmark:
-                    resolvedAddress.landmark ??
-                    null,
-                  fullAddress:
-                    resolvedAddress.fullAddress,
-                },
-              },
-
-              events: {
-                create: {
-                  type:
-                    "ORDER_CREATED",
-                  message:
-                    "Order created successfully",
-                },
-              },
-            },
-          });
-
-        /* ======================================================
-        SHIPPING
-        ====================================================== */
-        const shippingItems =
-          cart.items.map(
-            (item) => ({
-              variantId:
-                item.variantId,
-              quantity:
-                item.quantity,
-            })
-          );
-
-        const shippingOptions =
-          await shippingCalculatorService.calculateShippingOptions(
-            shippingItems,
-            resolvedAddress.stateId,
-            resolvedAddress.lgaId
-          );
-
-        if (
-          !shippingOptions.length
-        ) {
-          throw new Error(
-            "No shipping option available for this delivery location"
-          );
-        }
-
-        const selectedShipping = shippingOptions[0];
-
-        const shipment = await shipmentService.createShipment(
-            order.id,
-            selectedShipping.courierId,
-            selectedShipping.warehouseId,
-            selectedShipping.fee
-          );
-
-        let finalDeliveryFee = new Prisma.Decimal(selectedShipping.fee);
-        let finalTotalAmount = order.totalAmount.add(finalDeliveryFee);
-
-        if (
-          appliedCoupon?.type === CouponType.FREE_SHIPPING
-        ) {
-          finalDeliveryFee = new Prisma.Decimal(0);
-
-          finalTotalAmount = order.totalAmount;
-        }
-
-        const updatedOrder = await tx.order.update({
-            where: {
-              id: order.id,
-            },
-            data: {
-              deliveryFee:
-                finalDeliveryFee,
-              totalAmount:
-                finalTotalAmount,
-            },
-          });
-
-        await tx.orderEvent.create({
+        const order = await tx.order.create({
           data: {
-            orderId:
-              order.id,
-            type:
-              "SHIPPING_SELECTED",
-            message: `Shipping assigned via ${selectedShipping.courierName}`,
-            metadata: {
-              courierId:
-                selectedShipping.courierId,
-              courierName:
-                selectedShipping.courierName,
-              warehouseId:
-                selectedShipping.warehouseId,
-              warehouseName:
-                selectedShipping.warehouseName,
-              fee:
-                selectedShipping.fee,
-              distanceKm:
-                selectedShipping.distanceKm,
-              estimatedMinDays:
-                selectedShipping.estimatedMinDays,
-              estimatedMaxDays:
-                selectedShipping.estimatedMaxDays,
+            orderNumber: generateOrderNumber(),
+
+            userId,
+
+            status: "PENDING",
+
+            paymentStatus: "PENDING",
+
+            subtotal,
+
+            discountAmount: discount,
+
+            deliveryFee: new Prisma.Decimal(0),
+
+            totalAmount: subtotal.sub(discount),
+
+            currency: "NGN",
+
+            couponId: appliedCouponId,
+
+            expiresAt,
+
+            items: {
+              create: orderItems,
+            },
+
+            address: {
+              create: {
+                name: resolvedAddress.name,
+                phone: resolvedAddress.phone,
+                stateId: resolvedAddress.stateId,
+                lgaId: resolvedAddress.lgaId,
+                city: resolvedAddress.city,
+                area:
+                  resolvedAddress.area ?? null,
+                street: resolvedAddress.street,
+                landmark:
+                  resolvedAddress.landmark ??
+                  null,
+                fullAddress:
+                  resolvedAddress.fullAddress,
+              },
+            },
+
+            events: {
+              create: {
+                type: "ORDER_CREATED",
+                message: "Order created",
+              },
             },
           },
         });
 
-        /* ======================================================
-        PAYMENT
-        ====================================================== */
+        // ==============================================
+        // SHIPPING CALCULATION
+        // ==============================================
+
+        let finalDeliveryFee =
+          new Prisma.Decimal(0);
+
+        let shipment = null;
+
+        const deliveryStateId =
+          resolvedAddress.stateId;
+
+        const deliveryLgaId =
+          resolvedAddress.lgaId;
+
+        // ==============================================
+        // PICKUP STATION SHIPPING
+        // ==============================================
+
+        if (
+          shippingMethod ===
+          ShippingMethod.PICKUP_STATION
+        ) {
+          if (!pickupStationId) {
+            throw new Error(
+              "pickupStationId required for pickup station shipping"
+            );
+          }
+
+          const station =
+            await tx.pickupStation.findFirst({
+              where: {
+                id: pickupStationId,
+                isActive: true,
+              },
+            });
+
+          if (!station) {
+            throw new Error(
+              "Invalid or inactive pickup station"
+            );
+          }
+
+          finalDeliveryFee =
+            new Prisma.Decimal(0);
+
+          // Optional shipment creation for pickup
+          const pickupShipmentPayload: CreateShipmentInput =
+            {
+              orderId: order.id,
+
+              courierId:
+                station.courierId,
+
+              shippingRateId: null,
+
+              pickupStationId,
+
+              trackingNumber:
+                generateTrackingNumber(),
+
+              status:
+                ShipmentStatus.PENDING,
+
+              shippingMethod,
+
+              deliveryFee: 0,
+
+              supportsCOD: false,
+
+              weight:
+                await calculateTotalWeight(
+                  cart.items
+                ),
+
+              estimatedDays: 0,
+
+              notes:
+                "Pickup station shipment created",
+            };
+
+          shipment =
+            await ShipmentService.createShipment(
+              pickupShipmentPayload
+            );
+        } else {
+          // ============================================
+          // FIND SHIPPING ZONE
+          // ============================================
+
+          const zoneLga =
+            await tx.shippingZoneLGA.findFirst({
+              where: {
+                lgaId: deliveryLgaId,
+              },
+              include: {
+                zone: true,
+              },
+            });
+
+          const zoneState =
+            await tx.shippingZoneState.findFirst({
+              where: {
+                stateId: deliveryStateId,
+              },
+              include: {
+                zone: true,
+              },
+            });
+
+          const zone =
+            zoneLga?.zone ??
+            zoneState?.zone;
+
+          if (!zone) {
+            throw new Error(
+              "No shipping zone covers this delivery location"
+            );
+          }
+
+          // ============================================
+          // ACTIVE COURIER
+          // ============================================
+
+          const activeCourier =
+            await tx.courier.findFirst({
+              where: {
+                isActive: true,
+              },
+            });
+
+          if (!activeCourier) {
+            throw new Error(
+              "No active courier available"
+            );
+          }
+
+          // ============================================
+          // TOTAL WEIGHT
+          // ============================================
+
+          const totalWeight =
+            await calculateTotalWeight(
+              cart.items
+            );
+
+          // ============================================
+          // BEST SHIPPING RATE
+          // ============================================
+
+          const bestRate =
+            await tx.shippingRate.findFirst({
+              where: {
+                courierId:
+                  activeCourier.id,
+
+                zoneId: zone.id,
+
+                isActive: true,
+
+                minWeight: {
+                  lte: totalWeight,
+                },
+
+                maxWeight: {
+                  gte: totalWeight,
+                },
+              },
+
+              orderBy: [
+                {
+                  baseFee: "asc",
+                },
+                {
+                  perKgFee: "asc",
+                },
+              ],
+            });
+
+          if (!bestRate) {
+            throw new Error(
+              "No applicable shipping rate for this order"
+            );
+          }
+
+          // ============================================
+          // CALCULATE DELIVERY FEE
+          // ============================================
+
+          let deliveryFee =
+            new Prisma.Decimal(
+              bestRate.baseFee
+            );
+
+          if (
+            bestRate.perKgFee &&
+            totalWeight > 0
+          ) {
+            deliveryFee = deliveryFee.add(
+              new Prisma.Decimal(
+                bestRate.perKgFee
+              ).mul(totalWeight)
+            );
+          }
+
+          if (bestRate.fixedFee) {
+            deliveryFee = deliveryFee.add(
+              new Prisma.Decimal(
+                bestRate.fixedFee
+              )
+            );
+          }
+
+          finalDeliveryFee = deliveryFee;
+
+          // ============================================
+          // CREATE SHIPMENT PAYLOAD
+          // ============================================
+
+          const shipmentPayload: CreateShipmentInput =
+            {
+              orderId: order.id,
+
+              courierId:
+                bestRate.courierId,
+
+              shippingRateId:
+                bestRate.id,
+
+              pickupStationId: null,
+
+              trackingNumber:
+                generateTrackingNumber(),
+
+              status:
+                ShipmentStatus.PENDING,
+
+              shippingMethod,
+
+              deliveryFee:
+                finalDeliveryFee.toNumber(),
+
+              heavyItemSurcharge: null,
+
+              supportsCOD: false,
+
+              fragileFee: null,
+
+              sameDayFee:
+                shippingMethod ===
+                ShippingMethod.SAME_DAY
+                  ? 0
+                  : null,
+
+              weight: totalWeight,
+
+              volumetricWeight: null,
+
+              chargeableWeight:
+                totalWeight,
+
+              estimatedDays:
+                bestRate.estimatedDaysMin,
+
+              shippedAt: null,
+
+              deliveredAt: null,
+
+              notes: null,
+
+              failedReason: null,
+            };
+
+          // ============================================
+          // CREATE SHIPMENT
+          // ============================================
+
+          shipment =
+            await ShipmentService.createShipment(
+              shipmentPayload
+            );
+        }
+
+        // ==============================================
+        // FREE SHIPPING COUPON
+        // ==============================================
+
+        if (
+          appliedCoupon?.type ===
+          CouponType.FREE_SHIPPING
+        ) {
+          finalDeliveryFee =
+            new Prisma.Decimal(0);
+        }
+
+        // ==============================================
+        // UPDATE ORDER TOTALS
+        // ==============================================
+
+        const updatedOrder =
+          await tx.order.update({
+            where: {
+              id: order.id,
+            },
+
+            data: {
+              deliveryFee:
+                finalDeliveryFee,
+
+              totalAmount:
+                order.totalAmount.add(
+                  finalDeliveryFee
+                ),
+            },
+          });
+
+        // ==============================================
+        // CREATE PAYMENT
+        // ==============================================
+
         const payment =
           await tx.payment.create({
             data: {
-              orderId:
-                order.id,
+              orderId: order.id,
+
               reference: `PAY-${Date.now()}`,
+
               provider:
-                PaymentProvider.PAYSTACK,
+                paymentProvider as PaymentProvider,
+
               amount:
                 updatedOrder.totalAmount,
-              currency:
-                "NGN",
+
+              currency: "NGN",
+
               status:
                 PaymentStatus.PENDING,
             },
           });
 
-        /* ======================================================
-        RETURN
-        ====================================================== */
+        // ==============================================
+        // STORE IDEMPOTENCY KEY
+        // ==============================================
+
+        await tx.idempotencyKey.create({
+          data: {
+            key: req.idempotencyKey!,
+
+            userId,
+
+            response: {
+              orderId: order.id,
+              paymentId: payment.id,
+            },
+          },
+        });
+
+        // ==============================================
+        // CLEAR CART
+        // ==============================================
+
+        await tx.cartItem.deleteMany({
+          where: {
+            cartId: cart.id,
+          },
+        });
+
+        // ==============================================
+        // RETURN
+        // ==============================================
+
         return {
-          isDuplicate:
-            false as const,
-          order:
-            updatedOrder,
+          isDuplicate: false as const,
+          order: updatedOrder,
           payment,
           shipment,
         };
       }
     );
 
-    /* ======================================================
-    DUPLICATE REQUEST
-    ====================================================== */
+    // ==================================================
+    // DUPLICATE RESPONSE
+    // ==================================================
+
     if (result.isDuplicate) {
       return res.status(200).json({
-        message:
-          "Duplicate request",
-        data:
-          result.response,
+        message: "Duplicate request",
+        data: result.response,
       });
     }
 
-    /* ======================================================
-    SUCCESS
-    ====================================================== */
+    // ==================================================
+    // SUCCESS RESPONSE
+    // ==================================================
+
     return res.status(201).json({
-      message:
-        "Order created successfully",
-      order:
-        result.order,
-      payment:
-        result.payment,
-      shipment:
-        result.shipment,
+      message: "Order created successfully",
+
+      order: result.order,
+
+      payment: result.payment,
+
+      shipment: result.shipment,
     });
   } catch (error: any) {
     console.error(error);
 
-    if (
-      error.message ===
-      "Stock conflict"
-    ) {
-      return res.status(409).json({
-        message:
-          "Some items are out of stock",
-      });
-    }
-
     return res.status(400).json({
       message:
-        error.message ||
-        "Checkout failed",
+        error?.message || "Checkout failed",
     });
   }
 };

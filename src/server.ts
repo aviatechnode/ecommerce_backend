@@ -130,6 +130,7 @@ app.use("/api/coupons", couponRoutes)
 app.use("/api/address", addressRoutes)
 app.use("/api/locations", locationRoutes);
 app.use("/api/feedback", feedbackRoutes);
+app.use("/api/fitments", fitmentRoutes);
 
 
 /* ================= WEBHOOKS ================= */

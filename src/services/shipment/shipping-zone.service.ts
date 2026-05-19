@@ -12,15 +12,9 @@ import {
   ensureShippingZoneUnique,
 } from "../../../prisma/shippingZone.prismaChecks.js";
 
-/* =========================================================
-SHIPPING ZONE SERVICE (REFINED)
-========================================================= */
-
+ // SHIPPING ZONE SERVICE (REFINED)
 export class ShippingZoneService {
-  /* =========================================================
-  CREATE
-  ========================================================= */
-
+  // CREATE
   static async create(data: unknown) {
     const parsed = await validateOrThrow(
       createShippingZoneSchema,
@@ -43,10 +37,7 @@ export class ShippingZoneService {
     });
   }
 
-  /* =========================================================
-  GET ALL
-  ========================================================= */
-
+  // GET ALL
   static async getAll() {
     return prisma.shippingZone.findMany({
       include: {
@@ -58,10 +49,7 @@ export class ShippingZoneService {
     });
   }
 
-  /* =========================================================
-  GET BY ID
-  ========================================================= */
-
+  // GET BY ID
   static async getById(id: string) {
     const parsed = await validateOrThrow(
       shippingZoneIdParamSchema,
@@ -82,10 +70,7 @@ export class ShippingZoneService {
     return zone;
   }
 
-  /* =========================================================
-  UPDATE
-  ========================================================= */
-
+  // UPDATE
   static async update(id: string, data: unknown) {
     const parsedId = await validateOrThrow(
       shippingZoneIdParamSchema,
@@ -142,10 +127,7 @@ export class ShippingZoneService {
     });
   }
 
-  /* =========================================================
-  DELETE
-  ========================================================= */
-
+  // DELETE
   static async delete(id: string) {
     const parsed = await validateOrThrow(
       shippingZoneIdParamSchema,
@@ -164,10 +146,7 @@ export class ShippingZoneService {
     });
   }
 
-  /* =========================================================
-  TOGGLE STATUS
-  ========================================================= */
-
+  // TOGGLE STATUS
   static async toggleStatus(id: string) {
     const parsed = await validateOrThrow(
       shippingZoneIdParamSchema,
@@ -189,10 +168,7 @@ export class ShippingZoneService {
     });
   }
 
-  /* =========================================================
-  ACTIVE ZONES
-  ========================================================= */
-
+  // ACTIVE ZONES
   static async getActiveZones() {
     return prisma.shippingZone.findMany({
       where: { isActive: true },
