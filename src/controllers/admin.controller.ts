@@ -52,6 +52,19 @@ const adminSidebar: SidebarSection[] = [
     ],
   },
   {
+  title: "Logistics",
+  items: [
+    { label: "Shipments", path: "/admin/logistics/shipments", permission: "shipment:read" },
+    { label: "Tracking", path: "/admin/logistics/shipments/tracking", permission: "shipment:read" },
+    { label: "Events", path: "/admin/logistics/shipments/events", permission: "shipment:event:read" },
+
+    { label: "Couriers", path: "/admin/logistics/couriers", permission: "courier:read" },
+    { label: "Zones", path: "/admin/logistics/zones", permission: "shipping_zone:read" },
+    { label: "Rates", path: "/admin/logistics/rates", permission: "shipping_rate:read" },
+    { label: "Pickup Stations", path: "/admin/logistics/stations", permission: "pickup_station:read" },
+  ],
+},
+  {
     title: "Inventory",
     items: [
       { label: "Warehouses", path: "/admin/warehouses", permission: "inventory:read" },

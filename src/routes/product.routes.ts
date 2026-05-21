@@ -1,4 +1,5 @@
 import { Router } from "express";
+
 import {
   createProduct,
   getProducts,
@@ -18,17 +19,24 @@ const router = Router();
 // PUBLIC ROUTES
 //////////////////////////////////////////////////////////
 
-// Get all active products (with filters/search handled in controller)
+/**
+ * GET ALL PRODUCTS
+ * Supports filters/search/query params inside controller
+ */
 router.get("/", getProducts);
 
-// Get single product by ID
+/**
+ * GET SINGLE PRODUCT
+ */
 router.get("/:id", getProduct);
 
 //////////////////////////////////////////////////////////
 // PROTECTED ROUTES
 //////////////////////////////////////////////////////////
 
-// Create product
+/**
+ * CREATE PRODUCT
+ */
 router.post(
   "/",
   protect,
@@ -36,7 +44,9 @@ router.post(
   createProduct
 );
 
-// Update product
+/**
+ * UPDATE PRODUCT
+ */
 router.patch(
   "/:id",
   protect,
@@ -44,7 +54,9 @@ router.patch(
   updateProduct
 );
 
-// Soft delete product (recommended for production)
+/**
+ * SOFT DELETE PRODUCT
+ */
 router.delete(
   "/:id",
   protect,

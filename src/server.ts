@@ -40,7 +40,10 @@ import couponRoutes from "./routes/coupon.routes.js"
 import addressRoutes from "./routes/address.routes.js"
 import locationRoutes from "./routes/location.routes.js"
 import feedbackRoutes from "./routes/feedback.routes.js";
-
+import shippingRateRoutes from "./routes/shipping-rate.route.js";
+import shippingZoneRoutes from "./routes/shipping.zone.routes.js";
+import courierRoutes from "./routes/courier.routes.js";
+import pickupStationRouter from "./routes/pickup-station.routes.js";
 
 dotenv.config();
 
@@ -131,6 +134,10 @@ app.use("/api/address", addressRoutes)
 app.use("/api/locations", locationRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/fitments", fitmentRoutes);
+app.use("/api/shipping-rates", shippingRateRoutes);
+app.use("/api/shipping-zones", shippingZoneRoutes);
+app.use("/api/couriers", courierRoutes);
+app.use("/api/pickup-stations", pickupStationRouter);
 
 
 /* ================= WEBHOOKS ================= */

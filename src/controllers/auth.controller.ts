@@ -13,7 +13,7 @@ import { prisma } from "../lib/prismadb.js";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.js";
 import { resolvePermissions } from "../utils/rbac.js";
 import { sendEmail } from "../utils/email.js";
-import { createCsrfPair } from "../utils/csrf.js";
+import { createCsrfPair, generateCsrfToken, hashCsrfToken } from "../utils/csrf.js";
 
 // ================================================================
 // CONSTANTS
@@ -465,5 +465,57 @@ export const me = async (req: Request, res: Response) => {
     });
   } catch {
     return res.status(500).json({ message: "Server Error" });
+  }
+};
+
+export const csrf = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const refreshToken =
+      req.cookies?.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        message: "No session",
+      });
+    }
+
+    const session =
+      await prisma.refreshToken.findUnique({
+        where: {
+          token: refreshToken,
+        },
+      });
+
+    if (!session) {
+      return res.status(401).json({
+        message: "Invalid session",
+      });
+    }
+
+    const raw =
+      generateCsrfToken();
+
+    const hash =
+      hashCsrfToken(raw);
+
+    await prisma.refreshToken.update({
+      where: {
+        token: refreshToken,
+      },
+      data: {
+        csrfHash: hash,
+      },
+    });
+
+    return res.json({
+      csrfToken: raw,
+    });
+  } catch {
+    return res.status(500).json({
+      message: "Server Error",
+    });
   }
 };

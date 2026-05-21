@@ -6,6 +6,7 @@ import {
   me,
   signout,
   refresh,
+  csrf,
 } from "../controllers/auth.controller.js";
 
 import { csrfMiddleware } from "../middlewares/csrf.middleware.js";
@@ -32,5 +33,6 @@ router.post("/signout", protect, csrfMiddleware, signout);
 
 // get current user → safe (no CSRF)
 router.get("/me", protect, me);
+router.get("/csrf", csrf);
 
 export default router;

@@ -9,11 +9,7 @@ import {
 } from "../schemas/cart.schema.js";
 
 import { PickupStationService } from "../services/shipment/pickup-station.service.js";
-
-//////////////////////////////////////////////////////////
 // HELPERS
-//////////////////////////////////////////////////////////
-
 async function getOrCreateCart(userId: string) {
   return prisma.cart.upsert({
     where: { userId },
@@ -46,10 +42,7 @@ async function calculateTotalWeight(cartItems: any[]) {
   return totalWeight;
 }
 
-//////////////////////////////////////////////////////////
 // SHIPPING ESTIMATOR
-//////////////////////////////////////////////////////////
-
 async function estimateShipping(params: {
   stateId: string;
   lgaId: string;
@@ -65,10 +58,7 @@ async function estimateShipping(params: {
     cartItems,
   } = params;
 
-  //////////////////////////////////////////////////////////
   // PICKUP STATION SHIPPING
-  //////////////////////////////////////////////////////////
-
   if (
     shippingMethod ===
     ShippingMethod.PICKUP_STATION
@@ -101,10 +91,7 @@ async function estimateShipping(params: {
     };
   }
 
-  //////////////////////////////////////////////////////////
   // FIND SHIPPING ZONE
-  //////////////////////////////////////////////////////////
-
   const zoneLga =
     await prisma.shippingZoneLGA.findFirst({
       where: {
@@ -137,10 +124,7 @@ async function estimateShipping(params: {
     );
   }
 
-  //////////////////////////////////////////////////////////
   // ACTIVE COURIER
-  //////////////////////////////////////////////////////////
-
   const activeCourier =
     await prisma.courier.findFirst({
       where: {
@@ -154,19 +138,11 @@ async function estimateShipping(params: {
     );
   }
 
-  //////////////////////////////////////////////////////////
   // TOTAL WEIGHT
-  //////////////////////////////////////////////////////////
+  const totalWeight = await calculateTotalWeight(cartItems);
 
-  const totalWeight =
-    await calculateTotalWeight(cartItems);
-
-  //////////////////////////////////////////////////////////
   // BEST SHIPPING RATE
-  //////////////////////////////////////////////////////////
-
-  const bestRate =
-    await prisma.shippingRate.findFirst({
+  const bestRate = await prisma.shippingRate.findFirst({
       where: {
         courierId: activeCourier.id,
 
@@ -200,12 +176,8 @@ async function estimateShipping(params: {
     );
   }
 
-  //////////////////////////////////////////////////////////
   // CALCULATE DELIVERY FEE
-  //////////////////////////////////////////////////////////
-
-  let deliveryFee =
-    new Prisma.Decimal(
+  let deliveryFee = new Prisma.Decimal(
       bestRate.baseFee
     );
 
@@ -249,10 +221,7 @@ async function estimateShipping(params: {
   };
 }
 
-//////////////////////////////////////////////////////////
 // GET CART
-//////////////////////////////////////////////////////////
-
 export const getMyCart = async (
   req: Request,
   res: Response
@@ -266,10 +235,7 @@ export const getMyCart = async (
       });
     }
 
-    ////////////////////////////////////////////////////////
     // QUERY PARAMS
-    ////////////////////////////////////////////////////////
-
     const {
       stateId,
       lgaId,
@@ -277,10 +243,7 @@ export const getMyCart = async (
       pickupStationId,
     } = req.query;
 
-    ////////////////////////////////////////////////////////
     // CART
-    ////////////////////////////////////////////////////////
-
     const cart =
       await getOrCreateCart(user.id);
 
@@ -310,19 +273,13 @@ export const getMyCart = async (
     const items =
       fullCart?.items || [];
 
-    ////////////////////////////////////////////////////////
     // TOTALS
-    ////////////////////////////////////////////////////////
-
     const totals =
       calculateTotals(items);
 
     let shipping: any = null;
 
-    ////////////////////////////////////////////////////////
     // OPTIONAL SHIPPING ESTIMATION
-    ////////////////////////////////////////////////////////
-
     if (
       stateId &&
       lgaId &&
@@ -356,18 +313,12 @@ export const getMyCart = async (
       }
     }
 
-    ////////////////////////////////////////////////////////
     // GRAND TOTAL
-    ////////////////////////////////////////////////////////
-
     const grandTotal =
       totals.subtotal +
       (shipping?.deliveryFee || 0);
 
-    ////////////////////////////////////////////////////////
     // RESPONSE
-    ////////////////////////////////////////////////////////
-
     return res.json({
       cart: fullCart,
 
@@ -389,10 +340,7 @@ export const getMyCart = async (
   }
 };
 
-//////////////////////////////////////////////////////////
 // ADD TO CART
-//////////////////////////////////////////////////////////
-
 export const addToCart = async (
   req: Request,
   res: Response
@@ -527,10 +475,7 @@ export const addToCart = async (
   }
 };
 
-//////////////////////////////////////////////////////////
 // UPDATE CART ITEM
-//////////////////////////////////////////////////////////
-
 export const updateCartItem = async (
   req: Request<{ id: string }>,
   res: Response
@@ -609,10 +554,7 @@ export const updateCartItem = async (
   }
 };
 
-//////////////////////////////////////////////////////////
 // REMOVE CART ITEM
-//////////////////////////////////////////////////////////
-
 export const removeCartItem = async (
   req: Request<{ id: string }>,
   res: Response
@@ -672,10 +614,7 @@ export const removeCartItem = async (
   }
 };
 
-//////////////////////////////////////////////////////////
 // CLEAR CART
-//////////////////////////////////////////////////////////
-
 export const clearCart = async (
   req: Request,
   res: Response

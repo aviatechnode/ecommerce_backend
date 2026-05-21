@@ -286,8 +286,7 @@ export const createProduct = async (
             data.productFitments
               ?.length
           ) {
-            const fitments =
-              data.productFitments.map(
+            const fitments = data.productFitments.map(
                 (fitment) => ({
                   productId:
                     product.id,

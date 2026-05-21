@@ -43,8 +43,7 @@ export class WarehouseService {
       throw new Error("State not found");
     }
 
-    const existing =
-      await prisma.warehouse.findFirst({
+    const existing = await prisma.warehouse.findFirst({
         where: {
           name: parsed.name.trim(),
           city: parsed.city.trim(),

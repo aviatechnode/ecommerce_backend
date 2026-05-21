@@ -26,6 +26,15 @@ const permissionMatrix: Record<string, readonly string[]> = {
   order: ["create", "read", "update", "delete"],
   payment: ["read", "update"],
   shipment: ["create", "read","update","delete",],
+  // 🔥 SHIPMENT TRACKING + EVENTS
+  "shipment:event": ["create", "read", "update", "delete"],
+  "shipment:tracking": ["read"],
+
+  // 🔥 LOGISTICS
+  courier: ["create", "read", "update", "delete"],
+  shipping_zone: ["create", "read", "update", "delete"],
+  shipping_rate: ["create", "read", "update", "delete"],
+  pickup_station: ["create", "read", "update", "delete"],
 
   inventory: ["read", "update"],
   warehouse: ["create", "read", "update", "delete"],
@@ -83,6 +92,47 @@ const permissionGroups: Record<string, readonly string[]> = {
     "feedback:update",
     "feedback:delete",
   ],
+
+  LOGISTICS_MANAGEMENT: [
+  // Shipments
+  "shipment:create",
+  "shipment:read",
+  "shipment:update",
+  "shipment:delete",
+
+  // Tracking
+  "shipment:tracking:read",
+
+  // Shipment Events
+  "shipment:event:create",
+  "shipment:event:read",
+  "shipment:event:update",
+  "shipment:event:delete",
+
+  // Couriers
+  "courier:create",
+  "courier:read",
+  "courier:update",
+  "courier:delete",
+
+  // Shipping Zones
+  "shipping_zone:create",
+  "shipping_zone:read",
+  "shipping_zone:update",
+  "shipping_zone:delete",
+
+  // Shipping Rates
+  "shipping_rate:create",
+  "shipping_rate:read",
+  "shipping_rate:update",
+  "shipping_rate:delete",
+
+  // Pickup Stations
+  "pickup_station:create",
+  "pickup_station:read",
+  "pickup_station:update",
+  "pickup_station:delete",
+],
 
   INVENTORY_MANAGEMENT: [
     "inventory:read",
@@ -177,6 +227,7 @@ const roleDefinitions: readonly RoleDef[] = [
       "SYSTEM_MANAGEMENT",
       "CHAT_MANAGEMENT",
       "FITMENT_MANAGEMENT",
+      "LOGISTICS_MANAGEMENT",
     ],
   },
   {
