@@ -44,6 +44,7 @@ import shippingRateRoutes from "./routes/shipping-rate.route.js";
 import shippingZoneRoutes from "./routes/shipping.zone.routes.js";
 import courierRoutes from "./routes/courier.routes.js";
 import pickupStationRouter from "./routes/pickup-station.routes.js";
+import shipmentEventRoutes from "./routes/shipment.event.routes.js"
 
 dotenv.config();
 
@@ -138,6 +139,7 @@ app.use("/api/shipping-rates", shippingRateRoutes);
 app.use("/api/shipping-zones", shippingZoneRoutes);
 app.use("/api/couriers", courierRoutes);
 app.use("/api/pickup-stations", pickupStationRouter);
+app.use("/shipment-events", shipmentEventRoutes);
 
 
 /* ================= WEBHOOKS ================= */
