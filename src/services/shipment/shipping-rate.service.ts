@@ -1,27 +1,30 @@
 import { prisma } from "../../lib/prismadb.js";
-
 import {
   createShippingRateSchema,
   updateShippingRateSchema,
   shippingRateIdParamSchema,
 } from "../../schemas/shipment/schipment.rate.schema.js";
-
 import {
   assertExists,
   assertUniqueShippingRate,
   assertValidRange,
 } from "../_shared/shippingValidation.helpers.js";
 
- // SHIPPING RATE SERVICE (CLEAN VERSION)
 export class ShippingRateService {
   /**
-   * Create Shipping Rate
+   * Create shipping rate
    */
   static async createRate(data: unknown) {
     const parsed = createShippingRateSchema.parse(data);
 
     await assertExists("courier", parsed.courierId);
     await assertExists("shippingZone", parsed.zoneId);
+
+    assertValidRange(
+      parsed.minWeight,
+      parsed.maxWeight,
+      "Weight range"
+    );
 
     await assertUniqueShippingRate({
       courierId: parsed.courierId,
@@ -32,11 +35,22 @@ export class ShippingRateService {
 
     return prisma.shippingRate.create({
       data: {
-        ...parsed,
+        courierId: parsed.courierId,
+        zoneId: parsed.zoneId,
+        name: parsed.name,
+        minWeight: parsed.minWeight,
+        maxWeight: parsed.maxWeight,
+        baseFee: parsed.baseFee,
+        perKgFee: parsed.perKgFee,
+        volumetricDivisor: parsed.volumetricDivisor,
         fixedFee: parsed.fixedFee ?? null,
-        remoteAreaSurcharge: parsed.remoteAreaSurcharge ?? null,
+        remoteAreaSurcharge:
+          parsed.remoteAreaSurcharge ?? null,
+        insurancePercent: parsed.insurancePercent,
+        priority: parsed.priority,
+        supportsCOD:
+          parsed.supportsCOD ?? false,
         isActive: parsed.isActive ?? true,
-        supportsCOD: parsed.supportsCOD ?? false,
       },
     });
   }
@@ -46,7 +60,10 @@ export class ShippingRateService {
    */
   static async getAllRates() {
     return prisma.shippingRate.findMany({
-      orderBy: { createdAt: "desc" },
+      orderBy: [
+        { priority: "asc" },
+        { createdAt: "desc" },
+      ],
       include: {
         courier: true,
         zone: true,
@@ -58,42 +75,58 @@ export class ShippingRateService {
    * Get rate by ID
    */
   static async getRateById(id: string) {
-    const { id: rateId } = shippingRateIdParamSchema.parse({ id });
+    const { id: rateId } =
+      shippingRateIdParamSchema.parse({ id });
 
-    const rate = await prisma.shippingRate.findUnique({
-      where: { id: rateId },
-      include: {
-        courier: true,
-        zone: true,
-      },
-    });
+    const rate =
+      await prisma.shippingRate.findUnique({
+        where: { id: rateId },
+        include: {
+          courier: true,
+          zone: true,
+        },
+      });
 
-    if (!rate) throw new Error("Shipping rate not found");
+    if (!rate) {
+      throw new Error("Shipping rate not found");
+    }
 
     return rate;
   }
 
   /**
-   * Update rate (DRY + SAFE)
+   * Update rate
    */
-  static async updateRate(id: string, data: unknown) {
-    const { id: rateId } = shippingRateIdParamSchema.parse({ id });
-    const parsed = updateShippingRateSchema.parse(data);
+  static async updateRate(
+    id: string,
+    data: unknown
+  ) {
+    const { id: rateId } =
+      shippingRateIdParamSchema.parse({ id });
 
-    const existing = await prisma.shippingRate.findUnique({
-      where: { id: rateId },
-    });
+    const parsed =
+      updateShippingRateSchema.parse(data);
 
-    if (!existing) throw new Error("Shipping rate not found");
+    const existing =
+      await prisma.shippingRate.findUnique({
+        where: { id: rateId },
+      });
 
-    const minWeight = parsed.minWeight ?? existing.minWeight;
-    const maxWeight = parsed.maxWeight ?? existing.maxWeight;
+    if (!existing) {
+      throw new Error("Shipping rate not found");
+    }
 
-    const minDays = parsed.estimatedDaysMin ?? existing.estimatedDaysMin;
-    const maxDays = parsed.estimatedDaysMax ?? existing.estimatedDaysMax;
+    const minWeight =
+      parsed.minWeight ?? existing.minWeight;
 
-    assertValidRange(minWeight, maxWeight, "Weight range");
-    assertValidRange(minDays, maxDays, "Estimated days");
+    const maxWeight =
+      parsed.maxWeight ?? existing.maxWeight;
+
+    assertValidRange(
+      minWeight,
+      maxWeight,
+      "Weight range"
+    );
 
     await assertUniqueShippingRate({
       courierId: existing.courierId,
@@ -103,13 +136,18 @@ export class ShippingRateService {
       excludeId: rateId,
     });
 
-    const updateData: any = {};
+    const updateData: Record<
+      string,
+      unknown
+    > = {};
 
-    Object.entries(parsed).forEach(([key, value]) => {
-      if (value !== undefined) {
-        updateData[key] = value;
+    Object.entries(parsed).forEach(
+      ([key, value]) => {
+        if (value !== undefined) {
+          updateData[key] = value;
+        }
       }
-    });
+    );
 
     return prisma.shippingRate.update({
       where: { id: rateId },
@@ -135,14 +173,18 @@ export class ShippingRateService {
    * Delete rate
    */
   static async deleteRate(id: string) {
-    const { id: rateId } = shippingRateIdParamSchema.parse({ id });
+    const { id: rateId } =
+      shippingRateIdParamSchema.parse({ id });
 
-    const rate = await prisma.shippingRate.findUnique({
-      where: { id: rateId },
-      select: { id: true },
-    });
+    const rate =
+      await prisma.shippingRate.findUnique({
+        where: { id: rateId },
+        select: { id: true },
+      });
 
-    if (!rate) throw new Error("Shipping rate not found");
+    if (!rate) {
+      throw new Error("Shipping rate not found");
+    }
 
     return prisma.shippingRate.delete({
       where: { id: rateId },
@@ -162,16 +204,159 @@ export class ShippingRateService {
         courierId: params.courierId,
         zoneId: params.zoneId,
         isActive: true,
-        minWeight: { lte: params.weight },
-        maxWeight: { gte: params.weight },
+        minWeight: {
+          lte: params.weight,
+        },
+        maxWeight: {
+          gte: params.weight,
+        },
       },
-      orderBy: [{ baseFee: "asc" }, { perKgFee: "asc" }],
+      orderBy: [
+        { priority: "asc" },
+        { baseFee: "asc" },
+        { perKgFee: "asc" },
+      ],
     });
 
     if (!rates.length) {
-      throw new Error("No shipping rate found for this weight");
+      throw new Error(
+        "No shipping rate found for this weight"
+      );
     }
 
     return rates[0];
+  }
+
+  /**
+   * Calculate shipping fee
+   */
+  static async calculateRate(params: {
+    courierId: string;
+    zoneId: string;
+    actualWeight: number;
+    subtotal: number;
+    totalVolume?: number;
+    isRemoteArea?: boolean;
+  }) {
+    const {
+      courierId,
+      zoneId,
+      actualWeight,
+      subtotal,
+      totalVolume = 0,
+      isRemoteArea = false,
+    } = params;
+
+    /**
+     * Find candidate rates
+     */
+    const rates = await prisma.shippingRate.findMany({
+      where: {
+        courierId,
+        zoneId,
+        isActive: true,
+      },
+      orderBy: [
+        { priority: "asc" },
+        { baseFee: "asc" },
+      ],
+    });
+
+    if (!rates.length) {
+      throw new Error("No shipping rate found");
+    }
+
+    /**
+     * Calculate volumetric weight
+     */
+    const matchedRates = rates
+      .map((rate) => {
+        const volumetricWeight =
+          totalVolume > 0 &&
+          Number(rate.volumetricDivisor) > 0
+            ? totalVolume /
+              Number(rate.volumetricDivisor)
+            : 0;
+
+        const chargeableWeight = Math.max(
+          actualWeight,
+          volumetricWeight
+        );
+
+        return {
+          rate,
+          volumetricWeight,
+          chargeableWeight,
+        };
+      })
+      .filter(
+        ({ chargeableWeight, rate }) =>
+          chargeableWeight >=
+            Number(rate.minWeight) &&
+          chargeableWeight <=
+            Number(rate.maxWeight)
+      );
+
+    if (!matchedRates.length) {
+      throw new Error(
+        "No shipping rate found for this weight"
+      );
+    }
+
+    /**
+     * Best rate by priority
+     */
+    const selected = matchedRates[0];
+
+    if (!selected) {
+      throw new Error(
+        "No shipping rate found for this weight"
+      );
+    }
+
+    const rate = selected.rate;
+
+    let deliveryFee = Number(rate.baseFee);
+
+    /**
+     * Per KG fee
+     */
+    deliveryFee +=
+      Number(rate.perKgFee || 0) *
+      selected.chargeableWeight;
+
+    /**
+     * Fixed fee
+     */
+    deliveryFee += Number(rate.fixedFee || 0);
+
+    /**
+     * Remote area surcharge
+     */
+    if (isRemoteArea) {
+      deliveryFee += Number(
+        rate.remoteAreaSurcharge || 0
+      );
+    }
+
+    /**
+     * Insurance fee
+     */
+    if (Number(rate.insurancePercent) > 0) {
+      deliveryFee +=
+        (subtotal *
+          Number(rate.insurancePercent)) /
+        100;
+    }
+
+    return {
+      shippingRate: rate,
+      deliveryFee,
+      actualWeight,
+      volumetricWeight:
+        selected.volumetricWeight,
+      chargeableWeight:
+        selected.chargeableWeight,
+    };
   }
 }

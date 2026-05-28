@@ -8,13 +8,13 @@ CREATE TYPE "CouponLogAction" AS ENUM ('APPLIED', 'REJECTED', 'EXPIRED', 'LIMIT_
 CREATE TYPE "MediaType" AS ENUM ('IMAGE', 'VIDEO');
 
 -- CreateEnum
-CREATE TYPE "ShipmentStatus" AS ENUM ('PENDING', 'PROCESSING', 'SHIPPED', 'IN_TRANSIT', 'ARRIVED_AT_HUB', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED', 'RETURNED', 'CANCELLED');
+CREATE TYPE "ShipmentStatus" AS ENUM ('PENDING', 'PROCESSING', 'SHIPPED', 'IN_TRANSIT', 'ARRIVED_AT_HUB', 'OUT_FOR_DELIVERY', 'LABEL_CREATED', 'HANDED_TO_COURIER', 'DELIVERED', 'FAILED', 'RETURNED', 'CANCELLED');
 
 -- CreateEnum
 CREATE TYPE "InventoryMovementType" AS ENUM ('PURCHASE', 'SALE', 'ADJUSTMENT', 'RETURN');
 
 -- CreateEnum
-CREATE TYPE "OrderStatus" AS ENUM ('PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED');
+CREATE TYPE "OrderStatus" AS ENUM ('PENDING_PAYMENT', 'PAID', 'PROCESSING', 'PARTIALLY_SHIPPED', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'REFUNDED');
 
 -- CreateEnum
 CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'SUCCESS', 'FAILED');
@@ -57,6 +57,30 @@ CREATE TYPE "CouponUsageStatus" AS ENUM ('SUCCESS', 'REFUNDED', 'REVERSED');
 
 -- CreateEnum
 CREATE TYPE "PaymentProvider" AS ENUM ('PAYSTACK', 'FLUTTERWAVE', 'STRIPE', 'BANK_TRANSFER', 'CASH_ON_DELIVERY');
+
+-- CreateEnum
+CREATE TYPE "ShippingMethod" AS ENUM ('STANDARD', 'EXPRESS', 'SAME_DAY', 'PICKUP_STATION');
+
+-- CreateEnum
+CREATE TYPE "FitmentLevel" AS ENUM ('MAKE', 'MODEL', 'GENERATION', 'ENGINE', 'TRIM');
+
+-- CreateEnum
+CREATE TYPE "ShipmentEventSource" AS ENUM ('SYSTEM', 'COURIER', 'ADMIN', 'CUSTOMER');
+
+-- CreateEnum
+CREATE TYPE "FulfillmentStatus" AS ENUM ('PENDING', 'ALLOCATED', 'PICKING', 'PACKING', 'READY_FOR_DISPATCH', 'DISPATCHED', 'COMPLETED', 'FAILED');
+
+-- CreateEnum
+CREATE TYPE "ReturnRequestStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'ITEM_SHIPPED_BACK', 'ITEM_RECEIVED', 'INSPECTING', 'REFUND_APPROVED', 'REFUNDED', 'CLOSED', 'CANCELLED');
+
+-- CreateEnum
+CREATE TYPE "ReturnShipmentStatus" AS ENUM ('PENDING', 'APPROVED', 'PICKED_UP', 'IN_TRANSIT', 'RECEIVED', 'INSPECTING', 'REFUNDED', 'REJECTED', 'CANCELLED');
+
+-- CreateEnum
+CREATE TYPE "ReturnRequestItemStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'SHIPPED_BACK', 'RECEIVED', 'INSPECTING', 'REFUND_APPROVED', 'REFUNDED', 'CLOSED');
+
+-- CreateEnum
+CREATE TYPE "ShipmentType" AS ENUM ('OUTBOUND', 'RETURN');
 
 -- CreateTable
 CREATE TABLE "Role" (
@@ -342,6 +366,10 @@ CREATE TABLE "VariantAttribute" (
 CREATE TABLE "VehicleMake" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "VehicleMake_pkey" PRIMARY KEY ("id")
 );
@@ -351,6 +379,10 @@ CREATE TABLE "VehicleModel" (
     "id" TEXT NOT NULL,
     "makeId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "VehicleModel_pkey" PRIMARY KEY ("id")
 );
@@ -360,8 +392,13 @@ CREATE TABLE "VehicleGeneration" (
     "id" TEXT NOT NULL,
     "modelId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "slug" TEXT,
+    "chassisCode" TEXT,
     "yearStart" INTEGER NOT NULL,
     "yearEnd" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "VehicleGeneration_pkey" PRIMARY KEY ("id")
 );
@@ -371,7 +408,18 @@ CREATE TABLE "VehicleEngine" (
     "id" TEXT NOT NULL,
     "generationId" TEXT NOT NULL,
     "engineCode" TEXT NOT NULL,
-    "displacement" TEXT,
+    "engineName" TEXT,
+    "fuelType" TEXT,
+    "aspiration" TEXT,
+    "cylinders" INTEGER,
+    "horsepower" INTEGER,
+    "displacementCc" INTEGER,
+    "displacementLabel" TEXT,
+    "drivetrain" TEXT,
+    "transmissionType" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "VehicleEngine_pkey" PRIMARY KEY ("id")
 );
@@ -381,6 +429,11 @@ CREATE TABLE "VehicleTrim" (
     "id" TEXT NOT NULL,
     "engineId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "bodyType" TEXT,
+    "doors" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "VehicleTrim_pkey" PRIMARY KEY ("id")
 );
@@ -389,9 +442,18 @@ CREATE TABLE "VehicleTrim" (
 CREATE TABLE "FitmentIndex" (
     "id" TEXT NOT NULL,
     "productId" TEXT NOT NULL,
+    "makeId" TEXT,
     "make" TEXT NOT NULL,
+    "modelId" TEXT,
     "model" TEXT NOT NULL,
+    "generationId" TEXT,
+    "generation" TEXT,
+    "engineId" TEXT,
+    "engineCode" TEXT,
+    "trimId" TEXT,
+    "trim" TEXT,
     "year" INTEGER NOT NULL,
+    "searchableText" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "FitmentIndex_pkey" PRIMARY KEY ("id")
@@ -401,8 +463,20 @@ CREATE TABLE "FitmentIndex" (
 CREATE TABLE "ProductFitment" (
     "id" TEXT NOT NULL,
     "productId" TEXT NOT NULL,
-    "trimId" TEXT NOT NULL,
+    "level" "FitmentLevel" NOT NULL,
+    "makeId" TEXT,
+    "modelId" TEXT,
+    "generationId" TEXT,
+    "engineId" TEXT,
+    "trimId" TEXT,
+    "yearStart" INTEGER,
+    "yearEnd" INTEGER,
     "notes" TEXT,
+    "position" TEXT,
+    "quantityRequired" INTEGER,
+    "isUniversal" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "ProductFitment_pkey" PRIMARY KEY ("id")
 );
@@ -473,15 +547,6 @@ CREATE TABLE "WarehouseRoute" (
 );
 
 -- CreateTable
-CREATE TABLE "WarehouseLGA" (
-    "id" TEXT NOT NULL,
-    "warehouseId" TEXT NOT NULL,
-    "lgaId" TEXT NOT NULL,
-
-    CONSTRAINT "WarehouseLGA_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "Supplier" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -517,6 +582,12 @@ CREATE TABLE "PurchaseOrderItem" (
 CREATE TABLE "Cart" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
+    "deliveryStateId" TEXT,
+    "deliveryLgaId" TEXT,
+    "shippingZoneId" TEXT,
+    "estimatedDeliveryFee" DECIMAL(12,2),
+    "subtotal" DECIMAL(12,2),
+    "grandTotal" DECIMAL(12,2),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -633,8 +704,8 @@ CREATE TABLE "PaymentTransaction" (
 CREATE TABLE "Refund" (
     "id" TEXT NOT NULL,
     "paymentId" TEXT NOT NULL,
-    "amount" DECIMAL(12,2) NOT NULL,
     "orderItemId" TEXT,
+    "amount" DECIMAL(12,2) NOT NULL,
     "quantity" INTEGER,
     "reason" TEXT,
     "status" "RefundStatus" NOT NULL DEFAULT 'PENDING',
@@ -651,7 +722,7 @@ CREATE TABLE "ReturnRequest" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "status" "RefundStatus" NOT NULL DEFAULT 'PENDING',
+    "status" "ReturnRequestStatus" NOT NULL DEFAULT 'PENDING',
     "reason" TEXT,
     "notes" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -661,13 +732,56 @@ CREATE TABLE "ReturnRequest" (
 );
 
 -- CreateTable
+CREATE TABLE "ReturnRequestItem" (
+    "id" TEXT NOT NULL,
+    "returnRequestId" TEXT NOT NULL,
+    "orderItemId" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL,
+    "reason" TEXT,
+    "status" "ReturnRequestItemStatus" NOT NULL DEFAULT 'PENDING',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ReturnRequestItem_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Courier" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "phone" TEXT,
+    "email" TEXT,
+    "website" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Courier_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CourierWebhookLog" (
+    "id" TEXT NOT NULL,
+    "courierId" TEXT NOT NULL,
+    "eventType" TEXT NOT NULL,
+    "payload" JSONB NOT NULL,
+    "processed" BOOLEAN NOT NULL DEFAULT false,
+    "error" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CourierWebhookLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "ShipmentEvent" (
     "id" TEXT NOT NULL,
     "shipmentId" TEXT NOT NULL,
     "status" "ShipmentStatus" NOT NULL,
+    "source" "ShipmentEventSource" NOT NULL,
     "title" TEXT NOT NULL,
     "description" TEXT,
     "location" TEXT,
+    "metadata" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "ShipmentEvent_pkey" PRIMARY KEY ("id")
@@ -687,8 +801,7 @@ CREATE TABLE "ShippingRate" (
     "fixedFee" DECIMAL(12,2),
     "remoteAreaSurcharge" DECIMAL(12,2),
     "insurancePercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "estimatedDaysMin" INTEGER NOT NULL,
-    "estimatedDaysMax" INTEGER NOT NULL,
+    "priority" INTEGER NOT NULL DEFAULT 0,
     "supportsCOD" BOOLEAN NOT NULL DEFAULT false,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -700,24 +813,27 @@ CREATE TABLE "ShippingRate" (
 -- CreateTable
 CREATE TABLE "Shipment" (
     "id" TEXT NOT NULL,
-    "orderId" TEXT NOT NULL,
+    "fulfillmentId" TEXT NOT NULL,
+    "type" "ShipmentType" NOT NULL,
     "courierId" TEXT NOT NULL,
     "shippingRateId" TEXT,
     "trackingNumber" TEXT NOT NULL,
     "status" "ShipmentStatus" NOT NULL DEFAULT 'PENDING',
+    "shippingMethod" "ShippingMethod" NOT NULL,
     "deliveryFee" DECIMAL(12,2) NOT NULL,
-    "heavyItemSurcharge" DECIMAL(12,2),
-    "supportsCOD" BOOLEAN NOT NULL DEFAULT false,
-    "fragileFee" DECIMAL(12,2),
-    "sameDayFee" DECIMAL(12,2),
     "weight" DOUBLE PRECISION,
     "volumetricWeight" DOUBLE PRECISION,
     "chargeableWeight" DOUBLE PRECISION,
-    "estimatedDays" INTEGER,
-    "shippedAt" TIMESTAMP(3),
+    "estimatedDeliveryDate" TIMESTAMP(3),
+    "pickupStationId" TEXT,
+    "handedToCourierAt" TIMESTAMP(3),
+    "inTransitAt" TIMESTAMP(3),
     "deliveredAt" TIMESTAMP(3),
-    "notes" TEXT,
-    "failedReason" TEXT,
+    "failedAt" TIMESTAMP(3),
+    "failureReason" TEXT,
+    "metadata" JSONB,
+    "returnRequestId" TEXT,
+    "orderId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -725,17 +841,34 @@ CREATE TABLE "Shipment" (
 );
 
 -- CreateTable
-CREATE TABLE "Courier" (
+CREATE TABLE "ShipmentItem" (
     "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "phone" TEXT,
-    "email" TEXT,
-    "website" TEXT,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "shipmentId" TEXT NOT NULL,
+    "orderItemId" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL,
 
-    CONSTRAINT "Courier_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ShipmentItem_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ShippingQuote" (
+    "id" TEXT NOT NULL,
+    "checkoutSessionId" TEXT NOT NULL,
+    "courierName" TEXT NOT NULL,
+    "shippingMethod" "ShippingMethod" NOT NULL,
+    "zoneName" TEXT NOT NULL,
+    "weight" DOUBLE PRECISION NOT NULL,
+    "volumetricWeight" DOUBLE PRECISION NOT NULL,
+    "chargeableWeight" DOUBLE PRECISION NOT NULL,
+    "baseFee" DECIMAL(12,2) NOT NULL,
+    "surcharges" DECIMAL(12,2) NOT NULL,
+    "totalFee" DECIMAL(12,2) NOT NULL,
+    "estimatedMinDays" INTEGER NOT NULL,
+    "estimatedMaxDays" INTEGER NOT NULL,
+    "rawCalculation" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ShippingQuote_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -743,6 +876,8 @@ CREATE TABLE "ShippingZoneLGA" (
     "id" TEXT NOT NULL,
     "zoneId" TEXT NOT NULL,
     "lgaId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "ShippingZoneLGA_pkey" PRIMARY KEY ("id")
 );
@@ -770,14 +905,78 @@ CREATE TABLE "ShippingZone" (
 );
 
 -- CreateTable
+CREATE TABLE "Fulfillment" (
+    "id" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "warehouseId" TEXT NOT NULL,
+    "status" "FulfillmentStatus" NOT NULL,
+    "pickingStartedAt" TIMESTAMP(3),
+    "packedAt" TIMESTAMP(3),
+    "dispatchedAt" TIMESTAMP(3),
+    "notes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Fulfillment_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "FulfillmentItem" (
+    "id" TEXT NOT NULL,
+    "fulfillmentId" TEXT NOT NULL,
+    "orderItemId" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL,
+
+    CONSTRAINT "FulfillmentItem_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CheckoutSession" (
+    "id" TEXT NOT NULL,
+    "cartId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "deliveryLgaId" TEXT,
+    "subtotal" DECIMAL(12,2) NOT NULL,
+    "deliveryFee" DECIMAL(12,2) NOT NULL,
+    "totalAmount" DECIMAL(12,2) NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "completedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "shippingQuoteId" TEXT,
+
+    CONSTRAINT "CheckoutSession_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DeliverySLA" (
+    "id" TEXT NOT NULL,
+    "courierId" TEXT NOT NULL,
+    "zoneId" TEXT NOT NULL,
+    "shippingMethod" "ShippingMethod" NOT NULL,
+    "minDays" INTEGER NOT NULL,
+    "maxDays" INTEGER NOT NULL,
+    "cutoffHour" INTEGER,
+    "sameDaySupported" BOOLEAN NOT NULL DEFAULT false,
+
+    CONSTRAINT "DeliverySLA_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "PickupStation" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "stateId" TEXT NOT NULL,
     "lgaId" TEXT NOT NULL,
     "address" TEXT NOT NULL,
+    "landmark" TEXT,
+    "phone" TEXT,
+    "latitude" DOUBLE PRECISION,
+    "longitude" DOUBLE PRECISION,
+    "openingHours" TEXT,
+    "courierId" TEXT NOT NULL,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "PickupStation_pkey" PRIMARY KEY ("id")
 );
@@ -801,6 +1000,19 @@ CREATE TABLE "LGA" (
     "stateId" TEXT NOT NULL,
 
     CONSTRAINT "LGA_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ReturnShipment" (
+    "id" TEXT NOT NULL,
+    "returnRequestId" TEXT NOT NULL,
+    "courierId" TEXT,
+    "trackingNumber" TEXT,
+    "status" "ReturnShipmentStatus" NOT NULL DEFAULT 'PENDING',
+    "receivedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ReturnShipment_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1151,22 +1363,121 @@ CREATE UNIQUE INDEX "VariantAttribute_variantId_valueId_key" ON "VariantAttribut
 CREATE UNIQUE INDEX "VehicleMake_name_key" ON "VehicleMake"("name");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "VehicleMake_slug_key" ON "VehicleMake"("slug");
+
+-- CreateIndex
+CREATE INDEX "VehicleMake_isActive_idx" ON "VehicleMake"("isActive");
+
+-- CreateIndex
+CREATE INDEX "VehicleModel_makeId_idx" ON "VehicleModel"("makeId");
+
+-- CreateIndex
+CREATE INDEX "VehicleModel_isActive_idx" ON "VehicleModel"("isActive");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "VehicleModel_makeId_name_key" ON "VehicleModel"("makeId", "name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "VehicleModel_makeId_slug_key" ON "VehicleModel"("makeId", "slug");
+
+-- CreateIndex
+CREATE INDEX "VehicleGeneration_modelId_idx" ON "VehicleGeneration"("modelId");
+
+-- CreateIndex
+CREATE INDEX "VehicleGeneration_yearStart_yearEnd_idx" ON "VehicleGeneration"("yearStart", "yearEnd");
+
+-- CreateIndex
+CREATE INDEX "VehicleGeneration_isActive_idx" ON "VehicleGeneration"("isActive");
+
+-- CreateIndex
+CREATE INDEX "VehicleGeneration_chassisCode_idx" ON "VehicleGeneration"("chassisCode");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "VehicleGeneration_modelId_name_key" ON "VehicleGeneration"("modelId", "name");
 
 -- CreateIndex
+CREATE INDEX "VehicleEngine_generationId_idx" ON "VehicleEngine"("generationId");
+
+-- CreateIndex
+CREATE INDEX "VehicleEngine_engineCode_idx" ON "VehicleEngine"("engineCode");
+
+-- CreateIndex
+CREATE INDEX "VehicleEngine_fuelType_idx" ON "VehicleEngine"("fuelType");
+
+-- CreateIndex
+CREATE INDEX "VehicleEngine_isActive_idx" ON "VehicleEngine"("isActive");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "VehicleEngine_generationId_engineCode_key" ON "VehicleEngine"("generationId", "engineCode");
+
+-- CreateIndex
+CREATE INDEX "VehicleTrim_engineId_idx" ON "VehicleTrim"("engineId");
+
+-- CreateIndex
+CREATE INDEX "VehicleTrim_isActive_idx" ON "VehicleTrim"("isActive");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "VehicleTrim_engineId_name_key" ON "VehicleTrim"("engineId", "name");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "FitmentIndex_productId_make_model_year_key" ON "FitmentIndex"("productId", "make", "model", "year");
+CREATE INDEX "FitmentIndex_productId_idx" ON "FitmentIndex"("productId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ProductFitment_productId_trimId_key" ON "ProductFitment"("productId", "trimId");
+CREATE INDEX "FitmentIndex_make_idx" ON "FitmentIndex"("make");
+
+-- CreateIndex
+CREATE INDEX "FitmentIndex_model_idx" ON "FitmentIndex"("model");
+
+-- CreateIndex
+CREATE INDEX "FitmentIndex_year_idx" ON "FitmentIndex"("year");
+
+-- CreateIndex
+CREATE INDEX "FitmentIndex_make_model_year_idx" ON "FitmentIndex"("make", "model", "year");
+
+-- CreateIndex
+CREATE INDEX "FitmentIndex_makeId_modelId_idx" ON "FitmentIndex"("makeId", "modelId");
+
+-- CreateIndex
+CREATE INDEX "FitmentIndex_generationId_idx" ON "FitmentIndex"("generationId");
+
+-- CreateIndex
+CREATE INDEX "FitmentIndex_engineId_idx" ON "FitmentIndex"("engineId");
+
+-- CreateIndex
+CREATE INDEX "FitmentIndex_trimId_idx" ON "FitmentIndex"("trimId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "FitmentIndex_productId_make_model_year_engineCode_key" ON "FitmentIndex"("productId", "make", "model", "year", "engineCode");
+
+-- CreateIndex
+CREATE INDEX "ProductFitment_productId_idx" ON "ProductFitment"("productId");
+
+-- CreateIndex
+CREATE INDEX "ProductFitment_level_idx" ON "ProductFitment"("level");
+
+-- CreateIndex
+CREATE INDEX "ProductFitment_makeId_idx" ON "ProductFitment"("makeId");
+
+-- CreateIndex
+CREATE INDEX "ProductFitment_modelId_idx" ON "ProductFitment"("modelId");
+
+-- CreateIndex
+CREATE INDEX "ProductFitment_generationId_idx" ON "ProductFitment"("generationId");
+
+-- CreateIndex
+CREATE INDEX "ProductFitment_engineId_idx" ON "ProductFitment"("engineId");
+
+-- CreateIndex
+CREATE INDEX "ProductFitment_trimId_idx" ON "ProductFitment"("trimId");
+
+-- CreateIndex
+CREATE INDEX "ProductFitment_yearStart_yearEnd_idx" ON "ProductFitment"("yearStart", "yearEnd");
+
+-- CreateIndex
+CREATE INDEX "ProductFitment_isUniversal_idx" ON "ProductFitment"("isUniversal");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductFitment_productId_level_makeId_modelId_generationId__key" ON "ProductFitment"("productId", "level", "makeId", "modelId", "generationId", "engineId", "trimId", "yearStart", "yearEnd");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ProductInventory_variantId_warehouseId_key" ON "ProductInventory"("variantId", "warehouseId");
@@ -1190,13 +1501,13 @@ CREATE INDEX "WarehouseRoute_stateId_idx" ON "WarehouseRoute"("stateId");
 CREATE INDEX "WarehouseRoute_lgaId_idx" ON "WarehouseRoute"("lgaId");
 
 -- CreateIndex
-CREATE INDEX "WarehouseLGA_lgaId_idx" ON "WarehouseLGA"("lgaId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "WarehouseLGA_warehouseId_lgaId_key" ON "WarehouseLGA"("warehouseId", "lgaId");
-
--- CreateIndex
 CREATE UNIQUE INDEX "Cart_userId_key" ON "Cart"("userId");
+
+-- CreateIndex
+CREATE INDEX "Cart_deliveryStateId_idx" ON "Cart"("deliveryStateId");
+
+-- CreateIndex
+CREATE INDEX "Cart_deliveryLgaId_idx" ON "Cart"("deliveryLgaId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "CartItem_cartId_variantId_key" ON "CartItem"("cartId", "variantId");
@@ -1253,6 +1564,24 @@ CREATE INDEX "Refund_status_idx" ON "Refund"("status");
 CREATE INDEX "Refund_createdAt_idx" ON "Refund"("createdAt");
 
 -- CreateIndex
+CREATE INDEX "ReturnRequestItem_returnRequestId_idx" ON "ReturnRequestItem"("returnRequestId");
+
+-- CreateIndex
+CREATE INDEX "ReturnRequestItem_orderItemId_idx" ON "ReturnRequestItem"("orderItemId");
+
+-- CreateIndex
+CREATE INDEX "ReturnRequestItem_status_idx" ON "ReturnRequestItem"("status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Courier_name_key" ON "Courier"("name");
+
+-- CreateIndex
+CREATE INDEX "CourierWebhookLog_courierId_idx" ON "CourierWebhookLog"("courierId");
+
+-- CreateIndex
+CREATE INDEX "CourierWebhookLog_processed_idx" ON "CourierWebhookLog"("processed");
+
+-- CreateIndex
 CREATE INDEX "ShipmentEvent_shipmentId_idx" ON "ShipmentEvent"("shipmentId");
 
 -- CreateIndex
@@ -1265,16 +1594,19 @@ CREATE INDEX "ShippingRate_zoneId_idx" ON "ShippingRate"("zoneId");
 CREATE UNIQUE INDEX "Shipment_trackingNumber_key" ON "Shipment"("trackingNumber");
 
 -- CreateIndex
-CREATE INDEX "Shipment_orderId_idx" ON "Shipment"("orderId");
-
--- CreateIndex
 CREATE INDEX "Shipment_trackingNumber_idx" ON "Shipment"("trackingNumber");
 
 -- CreateIndex
 CREATE INDEX "Shipment_status_idx" ON "Shipment"("status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Courier_name_key" ON "Courier"("name");
+CREATE INDEX "Shipment_courierId_idx" ON "Shipment"("courierId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ShipmentItem_shipmentId_orderItemId_key" ON "ShipmentItem"("shipmentId", "orderItemId");
+
+-- CreateIndex
+CREATE INDEX "ShippingQuote_checkoutSessionId_idx" ON "ShippingQuote"("checkoutSessionId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ShippingZoneLGA_zoneId_lgaId_key" ON "ShippingZoneLGA"("zoneId", "lgaId");
@@ -1289,6 +1621,48 @@ CREATE UNIQUE INDEX "ShippingZone_name_key" ON "ShippingZone"("name");
 CREATE UNIQUE INDEX "ShippingZone_code_key" ON "ShippingZone"("code");
 
 -- CreateIndex
+CREATE INDEX "Fulfillment_orderId_idx" ON "Fulfillment"("orderId");
+
+-- CreateIndex
+CREATE INDEX "Fulfillment_warehouseId_idx" ON "Fulfillment"("warehouseId");
+
+-- CreateIndex
+CREATE INDEX "Fulfillment_status_idx" ON "Fulfillment"("status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "FulfillmentItem_fulfillmentId_orderItemId_key" ON "FulfillmentItem"("fulfillmentId", "orderItemId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CheckoutSession_shippingQuoteId_key" ON "CheckoutSession"("shippingQuoteId");
+
+-- CreateIndex
+CREATE INDEX "CheckoutSession_userId_idx" ON "CheckoutSession"("userId");
+
+-- CreateIndex
+CREATE INDEX "CheckoutSession_expiresAt_idx" ON "CheckoutSession"("expiresAt");
+
+-- CreateIndex
+CREATE INDEX "DeliverySLA_courierId_idx" ON "DeliverySLA"("courierId");
+
+-- CreateIndex
+CREATE INDEX "DeliverySLA_zoneId_idx" ON "DeliverySLA"("zoneId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DeliverySLA_courierId_zoneId_shippingMethod_key" ON "DeliverySLA"("courierId", "zoneId", "shippingMethod");
+
+-- CreateIndex
+CREATE INDEX "PickupStation_stateId_idx" ON "PickupStation"("stateId");
+
+-- CreateIndex
+CREATE INDEX "PickupStation_lgaId_idx" ON "PickupStation"("lgaId");
+
+-- CreateIndex
+CREATE INDEX "PickupStation_isActive_idx" ON "PickupStation"("isActive");
+
+-- CreateIndex
+CREATE INDEX "PickupStation_stateId_lgaId_idx" ON "PickupStation"("stateId", "lgaId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "State_name_key" ON "State"("name");
 
 -- CreateIndex
@@ -1296,6 +1670,15 @@ CREATE INDEX "LGA_stateId_idx" ON "LGA"("stateId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "LGA_stateId_name_key" ON "LGA"("stateId", "name");
+
+-- CreateIndex
+CREATE INDEX "ReturnShipment_returnRequestId_idx" ON "ReturnShipment"("returnRequestId");
+
+-- CreateIndex
+CREATE INDEX "ReturnShipment_courierId_idx" ON "ReturnShipment"("courierId");
+
+-- CreateIndex
+CREATE INDEX "ReturnShipment_status_idx" ON "ReturnShipment"("status");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Coupon_code_key" ON "Coupon"("code");
@@ -1481,22 +1864,37 @@ ALTER TABLE "VariantAttribute" ADD CONSTRAINT "VariantAttribute_variantId_fkey" 
 ALTER TABLE "VariantAttribute" ADD CONSTRAINT "VariantAttribute_valueId_fkey" FOREIGN KEY ("valueId") REFERENCES "AttributeValue"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "VehicleModel" ADD CONSTRAINT "VehicleModel_makeId_fkey" FOREIGN KEY ("makeId") REFERENCES "VehicleMake"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "VehicleModel" ADD CONSTRAINT "VehicleModel_makeId_fkey" FOREIGN KEY ("makeId") REFERENCES "VehicleMake"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "VehicleGeneration" ADD CONSTRAINT "VehicleGeneration_modelId_fkey" FOREIGN KEY ("modelId") REFERENCES "VehicleModel"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "VehicleGeneration" ADD CONSTRAINT "VehicleGeneration_modelId_fkey" FOREIGN KEY ("modelId") REFERENCES "VehicleModel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "VehicleEngine" ADD CONSTRAINT "VehicleEngine_generationId_fkey" FOREIGN KEY ("generationId") REFERENCES "VehicleGeneration"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "VehicleEngine" ADD CONSTRAINT "VehicleEngine_generationId_fkey" FOREIGN KEY ("generationId") REFERENCES "VehicleGeneration"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "VehicleTrim" ADD CONSTRAINT "VehicleTrim_engineId_fkey" FOREIGN KEY ("engineId") REFERENCES "VehicleEngine"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "VehicleTrim" ADD CONSTRAINT "VehicleTrim_engineId_fkey" FOREIGN KEY ("engineId") REFERENCES "VehicleEngine"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "FitmentIndex" ADD CONSTRAINT "FitmentIndex_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_trimId_fkey" FOREIGN KEY ("trimId") REFERENCES "VehicleTrim"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_makeId_fkey" FOREIGN KEY ("makeId") REFERENCES "VehicleMake"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_modelId_fkey" FOREIGN KEY ("modelId") REFERENCES "VehicleModel"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_generationId_fkey" FOREIGN KEY ("generationId") REFERENCES "VehicleGeneration"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_engineId_fkey" FOREIGN KEY ("engineId") REFERENCES "VehicleEngine"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_trimId_fkey" FOREIGN KEY ("trimId") REFERENCES "VehicleTrim"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ProductInventory" ADD CONSTRAINT "ProductInventory_variantId_fkey" FOREIGN KEY ("variantId") REFERENCES "ProductVariant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1532,12 +1930,6 @@ ALTER TABLE "WarehouseRoute" ADD CONSTRAINT "WarehouseRoute_stateId_fkey" FOREIG
 ALTER TABLE "WarehouseRoute" ADD CONSTRAINT "WarehouseRoute_lgaId_fkey" FOREIGN KEY ("lgaId") REFERENCES "LGA"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "WarehouseLGA" ADD CONSTRAINT "WarehouseLGA_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "WarehouseLGA" ADD CONSTRAINT "WarehouseLGA_lgaId_fkey" FOREIGN KEY ("lgaId") REFERENCES "LGA"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "PurchaseOrder" ADD CONSTRAINT "PurchaseOrder_supplierId_fkey" FOREIGN KEY ("supplierId") REFERENCES "Supplier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1548,6 +1940,15 @@ ALTER TABLE "PurchaseOrderItem" ADD CONSTRAINT "PurchaseOrderItem_variantId_fkey
 
 -- AddForeignKey
 ALTER TABLE "Cart" ADD CONSTRAINT "Cart_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Cart" ADD CONSTRAINT "Cart_deliveryStateId_fkey" FOREIGN KEY ("deliveryStateId") REFERENCES "State"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Cart" ADD CONSTRAINT "Cart_deliveryLgaId_fkey" FOREIGN KEY ("deliveryLgaId") REFERENCES "LGA"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Cart" ADD CONSTRAINT "Cart_shippingZoneId_fkey" FOREIGN KEY ("shippingZoneId") REFERENCES "ShippingZone"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "CartItem" ADD CONSTRAINT "CartItem_cartId_fkey" FOREIGN KEY ("cartId") REFERENCES "Cart"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1589,10 +1990,22 @@ ALTER TABLE "PaymentTransaction" ADD CONSTRAINT "PaymentTransaction_paymentId_fk
 ALTER TABLE "Refund" ADD CONSTRAINT "Refund_paymentId_fkey" FOREIGN KEY ("paymentId") REFERENCES "Payment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Refund" ADD CONSTRAINT "Refund_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "ReturnRequest" ADD CONSTRAINT "ReturnRequest_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ReturnRequest" ADD CONSTRAINT "ReturnRequest_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReturnRequestItem" ADD CONSTRAINT "ReturnRequestItem_returnRequestId_fkey" FOREIGN KEY ("returnRequestId") REFERENCES "ReturnRequest"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReturnRequestItem" ADD CONSTRAINT "ReturnRequestItem_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CourierWebhookLog" ADD CONSTRAINT "CourierWebhookLog_courierId_fkey" FOREIGN KEY ("courierId") REFERENCES "Courier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ShipmentEvent" ADD CONSTRAINT "ShipmentEvent_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1604,10 +2017,28 @@ ALTER TABLE "ShippingRate" ADD CONSTRAINT "ShippingRate_courierId_fkey" FOREIGN 
 ALTER TABLE "ShippingRate" ADD CONSTRAINT "ShippingRate_zoneId_fkey" FOREIGN KEY ("zoneId") REFERENCES "ShippingZone"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Shipment" ADD CONSTRAINT "Shipment_fulfillmentId_fkey" FOREIGN KEY ("fulfillmentId") REFERENCES "Fulfillment"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Shipment" ADD CONSTRAINT "Shipment_courierId_fkey" FOREIGN KEY ("courierId") REFERENCES "Courier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Shipment" ADD CONSTRAINT "Shipment_shippingRateId_fkey" FOREIGN KEY ("shippingRateId") REFERENCES "ShippingRate"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Shipment" ADD CONSTRAINT "Shipment_pickupStationId_fkey" FOREIGN KEY ("pickupStationId") REFERENCES "PickupStation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Shipment" ADD CONSTRAINT "Shipment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShipmentItem" ADD CONSTRAINT "ShipmentItem_shipmentId_fkey" FOREIGN KEY ("shipmentId") REFERENCES "Shipment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShipmentItem" ADD CONSTRAINT "ShipmentItem_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShippingQuote" ADD CONSTRAINT "ShippingQuote_checkoutSessionId_fkey" FOREIGN KEY ("checkoutSessionId") REFERENCES "CheckoutSession"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ShippingZoneLGA" ADD CONSTRAINT "ShippingZoneLGA_zoneId_fkey" FOREIGN KEY ("zoneId") REFERENCES "ShippingZone"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1622,7 +2053,49 @@ ALTER TABLE "ShippingZoneState" ADD CONSTRAINT "ShippingZoneState_zoneId_fkey" F
 ALTER TABLE "ShippingZoneState" ADD CONSTRAINT "ShippingZoneState_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "State"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Fulfillment" ADD CONSTRAINT "Fulfillment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Fulfillment" ADD CONSTRAINT "Fulfillment_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "Warehouse"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "FulfillmentItem" ADD CONSTRAINT "FulfillmentItem_fulfillmentId_fkey" FOREIGN KEY ("fulfillmentId") REFERENCES "Fulfillment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "FulfillmentItem" ADD CONSTRAINT "FulfillmentItem_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CheckoutSession" ADD CONSTRAINT "CheckoutSession_cartId_fkey" FOREIGN KEY ("cartId") REFERENCES "Cart"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CheckoutSession" ADD CONSTRAINT "CheckoutSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CheckoutSession" ADD CONSTRAINT "CheckoutSession_shippingQuoteId_fkey" FOREIGN KEY ("shippingQuoteId") REFERENCES "ShippingQuote"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DeliverySLA" ADD CONSTRAINT "DeliverySLA_courierId_fkey" FOREIGN KEY ("courierId") REFERENCES "Courier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DeliverySLA" ADD CONSTRAINT "DeliverySLA_zoneId_fkey" FOREIGN KEY ("zoneId") REFERENCES "ShippingZone"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PickupStation" ADD CONSTRAINT "PickupStation_courierId_fkey" FOREIGN KEY ("courierId") REFERENCES "Courier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PickupStation" ADD CONSTRAINT "PickupStation_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "State"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PickupStation" ADD CONSTRAINT "PickupStation_lgaId_fkey" FOREIGN KEY ("lgaId") REFERENCES "LGA"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "LGA" ADD CONSTRAINT "LGA_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "State"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReturnShipment" ADD CONSTRAINT "ReturnShipment_returnRequestId_fkey" FOREIGN KEY ("returnRequestId") REFERENCES "ReturnRequest"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReturnShipment" ADD CONSTRAINT "ReturnShipment_courierId_fkey" FOREIGN KEY ("courierId") REFERENCES "Courier"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Coupon" ADD CONSTRAINT "Coupon_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

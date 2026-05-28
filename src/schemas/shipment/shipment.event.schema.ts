@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { ShipmentStatus } from "@prisma/client";
+
+import {
+  ShipmentEventSource,
+  ShipmentStatus,
+} from "@prisma/client";
 
 /* =========================================================
 SHIPMENT EVENT SCHEMAS
@@ -19,6 +23,14 @@ export const createShipmentEventSchema = z.object({
     }),
   }),
 
+  source: z
+    .nativeEnum(ShipmentEventSource, {
+      errorMap: () => ({
+        message: "Invalid shipment event source",
+      }),
+    })
+    .optional(),
+
   title: z
     .string()
     .min(1, "Title is required")
@@ -35,6 +47,10 @@ export const createShipmentEventSchema = z.object({
     .max(255, "Location must not exceed 255 characters")
     .optional()
     .nullable(),
+
+  metadata: z
+    .record(z.any())
+    .optional(),
 });
 
 /**
@@ -45,6 +61,14 @@ export const updateShipmentEventSchema = z.object({
     .nativeEnum(ShipmentStatus, {
       errorMap: () => ({
         message: "Invalid shipment status",
+      }),
+    })
+    .optional(),
+
+  source: z
+    .nativeEnum(ShipmentEventSource, {
+      errorMap: () => ({
+        message: "Invalid shipment event source",
       }),
     })
     .optional(),
@@ -66,6 +90,10 @@ export const updateShipmentEventSchema = z.object({
     .max(255, "Location must not exceed 255 characters")
     .optional()
     .nullable(),
+
+  metadata: z
+    .record(z.any())
+    .optional(),
 });
 
 /**
@@ -81,8 +109,11 @@ export const shipmentEventIdParamSchema = z.object({
 TYPES
 ========================================================= */
 
-export type CreateShipmentEventInput = z.infer<typeof createShipmentEventSchema>;
+export type CreateShipmentEventInput =
+  z.infer<typeof createShipmentEventSchema>;
 
-export type UpdateShipmentEventInput = z.infer<typeof updateShipmentEventSchema>;
+export type UpdateShipmentEventInput =
+  z.infer<typeof updateShipmentEventSchema>;
 
-export type ShipmentEventIdParamInput = z.infer<typeof shipmentEventIdParamSchema>;
+export type ShipmentEventIdParamInput =
+  z.infer<typeof shipmentEventIdParamSchema>;

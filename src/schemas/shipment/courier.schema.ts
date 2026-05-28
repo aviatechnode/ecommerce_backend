@@ -74,6 +74,61 @@ export const updateCourierSchema = z.object({
     .optional(),
 });
 
+/* =========================================================
+COURIER WEBHOOK LOG SCHEMAS
+========================================================= */
+
+/**
+ * Create Courier Webhook Log Schema
+ */
+export const createCourierWebhookLogSchema = z.object({
+  courierId: z
+    .string()
+    .uuid("Courier ID must be a valid UUID"),
+
+  eventType: z
+    .string()
+    .min(1, "Event type is required")
+    .max(255, "Event type must not exceed 255 characters"),
+
+  payload: z.record(z.any()),
+
+  processed: z
+    .boolean()
+    .optional()
+    .default(false),
+
+  error: z
+    .string()
+    .max(1000, "Error message must not exceed 1000 characters")
+    .optional()
+    .nullable(),
+});
+
+/**
+ * Update Courier Webhook Log Schema
+ */
+export const updateCourierWebhookLogSchema = z.object({
+  processed: z
+    .boolean()
+    .optional(),
+
+  error: z
+    .string()
+    .max(1000, "Error message must not exceed 1000 characters")
+    .optional()
+    .nullable(),
+});
+
+/**
+ * Courier Webhook Log Params Schema
+ */
+export const courierWebhookLogIdParamSchema = z.object({
+  id: z
+    .string()
+    .uuid("Webhook log ID must be a valid UUID"),
+});
+
 /**
  * Params Schema (for :id validation)
  */
@@ -101,8 +156,26 @@ export type CreateCourierInput = z.infer<
   typeof createCourierSchema
 >;
 
-export type UpdateCourierInput = z.infer<typeof updateCourierSchema>;
+export type UpdateCourierInput = z.infer<
+  typeof updateCourierSchema
+>;
 
-export type CourierIdParamInput = z.infer<typeof courierIdParamSchema>;
+export type CreateCourierWebhookLogInput = z.infer<
+  typeof createCourierWebhookLogSchema
+>;
 
-export type CourierNameInput = z.infer<typeof courierNameSchema>;
+export type UpdateCourierWebhookLogInput = z.infer<
+  typeof updateCourierWebhookLogSchema
+>;
+
+export type CourierWebhookLogIdParamInput = z.infer<
+  typeof courierWebhookLogIdParamSchema
+>;
+
+export type CourierIdParamInput = z.infer<
+  typeof courierIdParamSchema
+>;
+
+export type CourierNameInput = z.infer<
+  typeof courierNameSchema
+>;

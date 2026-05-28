@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ShipmentStatus, ShippingMethod } from "@prisma/client";
+import {
+  ShipmentStatus,
+  ShippingMethod,
+  ShipmentType,
+  Prisma,
+} from "@prisma/client";
 
 /* =========================================================
 HELPERS
@@ -39,11 +44,44 @@ const optionalDateField = (fieldName: string) =>
     .nullable();
 
 /* =========================================================
+SHIPMENT ITEM SCHEMA
+========================================================= */
+
+export const shipmentItemSchema = z.object({
+  orderItemId: z
+    .string()
+    .uuid("Order item ID must be a valid UUID"),
+
+  quantity: z.coerce
+    .number({
+      invalid_type_error: "Quantity must be a valid number",
+    })
+    .int("Quantity must be an integer")
+    .min(1, "Quantity must be at least 1"),
+});
+
+/* =========================================================
 BASE SHIPMENT SCHEMA
 ========================================================= */
 
 const shipmentBaseSchema = {
-  courierId: z.string().uuid("Courier ID must be a valid UUID"),
+  fulfillmentId: z
+    .string()
+    .uuid("Fulfillment ID must be a valid UUID"),
+
+  orderId: z
+    .string()
+    .uuid("Order ID must be a valid UUID"),
+
+  type: z.nativeEnum(ShipmentType, {
+    errorMap: () => ({
+      message: "Invalid shipment type",
+    }),
+  }),
+
+  courierId: z
+    .string()
+    .uuid("Courier ID must be a valid UUID"),
 
   shippingRateId: z
     .string()
@@ -57,10 +95,20 @@ const shipmentBaseSchema = {
     .optional()
     .nullable(),
 
+  returnRequestId: z
+    .string()
+    .uuid("Return request ID must be a valid UUID")
+    .optional()
+    .nullable(),
+
   trackingNumber: z
     .string()
     .min(1, "Tracking number is required")
-    .max(255, "Tracking number must not exceed 255 characters"),
+    .max(
+      255,
+      "Tracking number must not exceed 255 characters"
+    )
+    .optional(),
 
   status: z
     .nativeEnum(ShipmentStatus, {
@@ -79,16 +127,6 @@ const shipmentBaseSchema = {
 
   deliveryFee: decimalField("Delivery fee"),
 
-  heavyItemSurcharge: optionalDecimalField(
-    "Heavy item surcharge"
-  ),
-
-  supportsCOD: z.boolean().optional().default(false),
-
-  fragileFee: optionalDecimalField("Fragile fee"),
-
-  sameDayFee: optionalDecimalField("Same day fee"),
-
   weight: optionalFloatField("Weight"),
 
   volumetricWeight: optionalFloatField(
@@ -99,34 +137,42 @@ const shipmentBaseSchema = {
     "Chargeable weight"
   ),
 
-  estimatedDays: z.coerce
-    .number({
-      invalid_type_error:
-        "Estimated days must be a valid number",
-    })
-    .int("Estimated days must be an integer")
-    .min(0, "Estimated days cannot be negative")
-    .optional()
-    .nullable(),
+  estimatedDeliveryDate: optionalDateField(
+    "Estimated delivery date"
+  ),
 
-  shippedAt: optionalDateField("Shipped date"),
+  handedToCourierAt: optionalDateField(
+    "Handed to courier date"
+  ),
 
-  deliveredAt: optionalDateField("Delivered date"),
+  inTransitAt: optionalDateField(
+    "In transit date"
+  ),
 
-  notes: z
-    .string()
-    .max(2000, "Notes must not exceed 2000 characters")
-    .optional()
-    .nullable(),
+  deliveredAt: optionalDateField(
+    "Delivered date"
+  ),
 
-  failedReason: z
+  failedAt: optionalDateField(
+    "Failed date"
+  ),
+
+  failureReason: z
     .string()
     .max(
       1000,
-      "Failed reason must not exceed 1000 characters"
+      "Failure reason must not exceed 1000 characters"
     )
     .optional()
     .nullable(),
+
+  metadata: z
+  .custom<Prisma.InputJsonValue>()
+  .optional(),
+
+  items: z
+    .array(shipmentItemSchema)
+    .min(1, "Shipment must contain at least one item"),
 };
 
 /* =========================================================
@@ -135,26 +181,9 @@ CREATE SHIPMENT
 
 export const createShipmentSchema = z
   .object({
-    orderId: z.string().uuid("Order ID must be a valid UUID"),
-
     ...shipmentBaseSchema,
   })
   .superRefine((data, ctx) => {
-    // deliveredAt must be after shippedAt
-    if (
-      data.shippedAt &&
-      data.deliveredAt &&
-      data.deliveredAt < data.shippedAt
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["deliveredAt"],
-        message:
-          "Delivered date must be after shipped date",
-      });
-    }
-
-    // pickup station validation
     if (
       data.shippingMethod ===
         ShippingMethod.PICKUP_STATION &&
@@ -168,33 +197,18 @@ export const createShipmentSchema = z
       });
     }
 
-    // same day fee validation
-    if (
-      data.shippingMethod === ShippingMethod.SAME_DAY &&
-      data.sameDayFee == null
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["sameDayFee"],
-        message:
-          "Same day fee is required for same day shipping",
-      });
-    }
-
-    // failed reason validation
     if (
       data.status === ShipmentStatus.FAILED &&
-      !data.failedReason
+      !data.failureReason
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["failedReason"],
+        path: ["failureReason"],
         message:
-          "Failed reason is required when shipment status is FAILED",
+          "Failure reason is required when shipment status is FAILED",
       });
     }
 
-    // delivered shipment validation
     if (
       data.status === ShipmentStatus.DELIVERED &&
       !data.deliveredAt
@@ -203,28 +217,26 @@ export const createShipmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["deliveredAt"],
         message:
-          "Delivered date is required when shipment is delivered",
+          "Delivered date is required when shipment is DELIVERED",
       });
     }
 
-    // shipped shipment validation
-   const shippedStatuses: ShipmentStatus[] = [
-    ShipmentStatus.SHIPPED,
-    ShipmentStatus.IN_TRANSIT,
-    ShipmentStatus.OUT_FOR_DELIVERY,
-    ShipmentStatus.DELIVERED,
-  ];
+    const inTransitStatuses: ShipmentStatus[] = [
+      ShipmentStatus.IN_TRANSIT,
+      ShipmentStatus.OUT_FOR_DELIVERY,
+      ShipmentStatus.DELIVERED,
+    ];
 
-  if (
-    data.status &&
-    shippedStatuses.includes(data.status) &&
-    !data.shippedAt
-  ){
+    if (
+      data.status &&
+      inTransitStatuses.includes(data.status) &&
+      !data.inTransitAt
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["shippedAt"],
+        path: ["inTransitAt"],
         message:
-          "Shipped date is required once shipment has been shipped",
+          "In transit date is required once shipment is in transit",
       });
     }
   });
@@ -235,6 +247,19 @@ UPDATE SHIPMENT
 
 export const updateShipmentSchema = z
   .object({
+    fulfillmentId: z
+      .string()
+      .uuid("Fulfillment ID must be a valid UUID")
+      .optional(),
+
+    type: z
+      .nativeEnum(ShipmentType, {
+        errorMap: () => ({
+          message: "Invalid shipment type",
+        }),
+      })
+      .optional(),
+
     courierId: z
       .string()
       .uuid("Courier ID must be a valid UUID")
@@ -249,6 +274,12 @@ export const updateShipmentSchema = z
     pickupStationId: z
       .string()
       .uuid("Pickup Station ID must be a valid UUID")
+      .optional()
+      .nullable(),
+
+    returnRequestId: z
+      .string()
+      .uuid("Return request ID must be a valid UUID")
       .optional()
       .nullable(),
 
@@ -277,17 +308,9 @@ export const updateShipmentSchema = z
       })
       .optional(),
 
-    deliveryFee: decimalField("Delivery fee").optional(),
-
-    heavyItemSurcharge: optionalDecimalField(
-      "Heavy item surcharge"
-    ),
-
-    supportsCOD: z.boolean().optional(),
-
-    fragileFee: optionalDecimalField("Fragile fee"),
-
-    sameDayFee: optionalDecimalField("Same day fee"),
+    deliveryFee: decimalField(
+      "Delivery fee"
+    ).optional(),
 
     weight: optionalFloatField("Weight"),
 
@@ -299,52 +322,42 @@ export const updateShipmentSchema = z
       "Chargeable weight"
     ),
 
-    estimatedDays: z.coerce
-      .number({
-        invalid_type_error:
-          "Estimated days must be a valid number",
-      })
-      .int("Estimated days must be an integer")
-      .min(0, "Estimated days cannot be negative")
-      .optional()
-      .nullable(),
+    estimatedDeliveryDate: optionalDateField(
+      "Estimated delivery date"
+    ),
 
-    shippedAt: optionalDateField("Shipped date"),
+    handedToCourierAt: optionalDateField(
+      "Handed to courier date"
+    ),
 
-    deliveredAt: optionalDateField("Delivered date"),
+    inTransitAt: optionalDateField(
+      "In transit date"
+    ),
 
-    notes: z
-      .string()
-      .max(
-        2000,
-        "Notes must not exceed 2000 characters"
-      )
-      .optional()
-      .nullable(),
+    deliveredAt: optionalDateField(
+      "Delivered date"
+    ),
 
-    failedReason: z
+    failedAt: optionalDateField(
+      "Failed date"
+    ),
+
+    failureReason: z
       .string()
       .max(
         1000,
-        "Failed reason must not exceed 1000 characters"
+        "Failure reason must not exceed 1000 characters"
       )
       .optional()
       .nullable(),
+
+    metadata: z.record(z.any()).optional().nullable(),
+
+    items: z
+      .array(shipmentItemSchema)
+      .optional(),
   })
   .superRefine((data, ctx) => {
-    if (
-      data.shippedAt &&
-      data.deliveredAt &&
-      data.deliveredAt < data.shippedAt
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["deliveredAt"],
-        message:
-          "Delivered date must be after shipped date",
-      });
-    }
-
     if (
       data.shippingMethod ===
         ShippingMethod.PICKUP_STATION &&
@@ -359,26 +372,14 @@ export const updateShipmentSchema = z
     }
 
     if (
-      data.shippingMethod === ShippingMethod.SAME_DAY &&
-      data.sameDayFee == null
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["sameDayFee"],
-        message:
-          "Same day fee is required for same day shipping",
-      });
-    }
-
-    if (
       data.status === ShipmentStatus.FAILED &&
-      !data.failedReason
+      !data.failureReason
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["failedReason"],
+        path: ["failureReason"],
         message:
-          "Failed reason is required when shipment status is FAILED",
+          "Failure reason is required when shipment status is FAILED",
       });
     }
 
@@ -390,7 +391,7 @@ export const updateShipmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["deliveredAt"],
         message:
-          "Delivered date is required when shipment is delivered",
+          "Delivered date is required when shipment is DELIVERED",
       });
     }
   });
@@ -407,29 +408,41 @@ export const updateShipmentStatusSchema = z
       }),
     }),
 
-    failedReason: z
+    failureReason: z
       .string()
       .max(
         1000,
-        "Failed reason must not exceed 1000 characters"
+        "Failure reason must not exceed 1000 characters"
       )
       .optional()
       .nullable(),
 
-    shippedAt: optionalDateField("Shipped date"),
+    handedToCourierAt: optionalDateField(
+      "Handed to courier date"
+    ),
 
-    deliveredAt: optionalDateField("Delivered date"),
+    inTransitAt: optionalDateField(
+      "In transit date"
+    ),
+
+    deliveredAt: optionalDateField(
+      "Delivered date"
+    ),
+
+    failedAt: optionalDateField(
+      "Failed date"
+    ),
   })
   .superRefine((data, ctx) => {
     if (
       data.status === ShipmentStatus.FAILED &&
-      !data.failedReason
+      !data.failureReason
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["failedReason"],
+        path: ["failureReason"],
         message:
-          "Failed reason is required when shipment status is FAILED",
+          "Failure reason is required when shipment status is FAILED",
       });
     }
 
@@ -450,40 +463,44 @@ export const updateShipmentStatusSchema = z
 SHIPMENT EVENT SCHEMAS
 ========================================================= */
 
-export const createShipmentEventSchema = z.object({
-  shipmentId: z
-    .string()
-    .uuid("Shipment ID must be a valid UUID"),
+export const createShipmentEventSchema =
+  z.object({
+    shipmentId: z
+      .string()
+      .uuid("Shipment ID must be a valid UUID"),
 
-  status: z.nativeEnum(ShipmentStatus, {
-    errorMap: () => ({
-      message: "Invalid shipment status",
+    status: z.nativeEnum(ShipmentStatus, {
+      errorMap: () => ({
+        message: "Invalid shipment status",
+      }),
     }),
-  }),
 
-  title: z
-    .string()
-    .min(1, "Event title is required")
-    .max(255, "Event title must not exceed 255 characters"),
+    title: z
+      .string()
+      .min(1, "Event title is required")
+      .max(
+        255,
+        "Event title must not exceed 255 characters"
+      ),
 
-  description: z
-    .string()
-    .max(
-      2000,
-      "Description must not exceed 2000 characters"
-    )
-    .optional()
-    .nullable(),
+    description: z
+      .string()
+      .max(
+        2000,
+        "Description must not exceed 2000 characters"
+      )
+      .optional()
+      .nullable(),
 
-  location: z
-    .string()
-    .max(
-      255,
-      "Location must not exceed 255 characters"
-    )
-    .optional()
-    .nullable(),
-});
+    location: z
+      .string()
+      .max(
+        255,
+        "Location must not exceed 255 characters"
+      )
+      .optional()
+      .nullable(),
+  });
 
 /* =========================================================
 PARAMS SCHEMA
@@ -498,6 +515,10 @@ export const shipmentIdParamSchema = z.object({
 /* =========================================================
 TYPES
 ========================================================= */
+
+export type ShipmentItemInput = z.infer<
+  typeof shipmentItemSchema
+>;
 
 export type CreateShipmentInput = z.infer<
   typeof createShipmentSchema

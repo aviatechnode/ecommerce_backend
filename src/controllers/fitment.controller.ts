@@ -3,6 +3,15 @@ import { prisma } from "../lib/prismadb.js";
 import { FitmentLevel } from "@prisma/client";
 import slugify from "slugify";
 
+
+const getParamId = (id: unknown): string => {
+  if (typeof id !== "string") {
+    throw new Error("Invalid id parameter");
+  }
+
+  return id;
+};
+
 // CREATE MAKE
 export const createMake = async (
   req: Request,
@@ -457,4 +466,246 @@ export const getVehicleTree = async (
     });
 
   res.json(makes);
+};
+
+
+
+ // DELETE
+
+export const deleteMake = async (
+  req: Request,
+  res: Response
+) => {
+  const id = getParamId(req.params.id);
+
+  await prisma.vehicleMake.delete({
+    where: { id },
+  });
+
+  res.status(200).json({
+    message: "Make deleted",
+  });
+};
+
+export const deleteModel = async (
+  req: Request,
+  res: Response
+) => {
+  const id = getParamId(req.params.id);
+
+  await prisma.vehicleModel.delete({
+    where: { id },
+  });
+
+  res.status(200).json({
+    message: "Model deleted",
+  });
+};
+
+export const deleteGeneration = async (
+  req: Request,
+  res: Response
+) => {
+  const id = getParamId(req.params.id);
+
+  await prisma.vehicleGeneration.delete({
+    where: { id },
+  });
+
+  res.status(200).json({
+    message: "Generation deleted",
+  });
+};
+
+export const deleteEngine = async (
+  req: Request,
+  res: Response
+) => {
+  const id = getParamId(req.params.id);
+
+  await prisma.vehicleEngine.delete({
+    where: { id },
+  });
+
+  res.status(200).json({
+    message: "Engine deleted",
+  });
+};
+
+export const deleteTrim = async (
+  req: Request,
+  res: Response
+) => {
+  const id = getParamId(req.params.id);
+
+  await prisma.vehicleTrim.delete({
+    where: { id },
+  });
+
+  res.status(200).json({
+    message: "Trim deleted",
+  });
+};
+
+// UPDATE
+
+export const updateMake = async (
+  req: Request,
+  res: Response
+) => {
+  const id = getParamId(req.params.id);
+
+  const { name, slug, isActive } = req.body;
+
+  const make = await prisma.vehicleMake.update({
+    where: { id },
+    data: {
+      name,
+      slug:
+        slug ||
+        slugify(name, {
+          lower: true,
+          strict: true,
+        }),
+      isActive,
+    },
+  });
+
+  res.status(200).json(make);
+};
+
+export const updateModel = async (
+  req: Request,
+  res: Response
+) => {
+  const id = getParamId(req.params.id);
+
+  const { makeId, name, slug, isActive } =
+    req.body;
+
+  const model = await prisma.vehicleModel.update({
+    where: { id },
+    data: {
+      makeId,
+      name,
+      slug:
+        slug ||
+        slugify(name, {
+          lower: true,
+          strict: true,
+        }),
+      isActive,
+    },
+  });
+
+  res.status(200).json(model);
+};
+
+export const updateGeneration = async (
+  req: Request,
+  res: Response
+) => {
+  const id = getParamId(req.params.id);
+
+  const {
+    modelId,
+    name,
+    slug,
+    chassisCode,
+    yearStart,
+    yearEnd,
+    isActive,
+  } = req.body;
+
+  const generation =
+    await prisma.vehicleGeneration.update({
+      where: { id },
+      data: {
+        modelId,
+        name,
+        slug:
+          slug ||
+          slugify(name, {
+            lower: true,
+            strict: true,
+          }),
+        chassisCode,
+        yearStart,
+        yearEnd,
+        isActive,
+      },
+    });
+
+  res.status(200).json(generation);
+};
+
+export const updateEngine = async (
+  req: Request,
+  res: Response
+) => {
+  const id = getParamId(req.params.id);
+
+  const {
+    generationId,
+    engineCode,
+    engineName,
+    fuelType,
+    aspiration,
+    cylinders,
+    horsepower,
+    displacementCc,
+    displacementLabel,
+    drivetrain,
+    transmissionType,
+    isActive,
+  } = req.body;
+
+  const engine =
+    await prisma.vehicleEngine.update({
+      where: { id },
+      data: {
+        generationId,
+        engineCode,
+        engineName,
+        fuelType,
+        aspiration,
+        cylinders,
+        horsepower,
+        displacementCc,
+        displacementLabel,
+        drivetrain,
+        transmissionType,
+        isActive,
+      },
+    });
+
+  res.status(200).json(engine);
+};
+
+export const updateTrim = async (
+  req: Request,
+  res: Response
+) => {
+  const id = getParamId(req.params.id);
+
+  const {
+    engineId,
+    name,
+    bodyType,
+    doors,
+    isActive,
+  } = req.body;
+
+  const trim = await prisma.vehicleTrim.update({
+    where: { id },
+    data: {
+      engineId,
+      name,
+      bodyType,
+      doors,
+      isActive,
+    },
+  });
+
+  res.status(200).json(trim);
 };

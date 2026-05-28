@@ -925,26 +925,46 @@ model ReturnRequestItem {
 }
 
 // SHIPPING
+model Courier {
+  id String @id @default(uuid())
+  name String @unique
+  phone String?
+  email String?
+  website String?
+  isActive Boolean @default(true)
+  rates ShippingRate[]
+  shipments Shipment[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  pickupStations PickupStation[]
+  deliverySLAs DeliverySLA[]
+  courierWebhookLogs CourierWebhookLog[]
+  returnShipments ReturnShipment[]
+}
+
+model CourierWebhookLog {
+  id String @id @default(uuid())
+  courierId String
+  eventType String
+  payload Json
+  processed Boolean @default(false)
+  error String?
+  createdAt DateTime @default(now())
+  courier Courier @relation(fields: [courierId], references: [id])
+  @@index([courierId])
+  @@index([processed])
+}
 model ShipmentEvent {
   id String @id @default(uuid())
-
   shipmentId String
-
   status ShipmentStatus
-
   source ShipmentEventSource
-
   title String
   description String?
-
   location String?
-
   metadata Json?
-
   shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-
   createdAt DateTime @default(now())
-
   @@index([shipmentId])
 }
 
@@ -975,54 +995,36 @@ model ShippingRate {
 
 model Shipment {
   id String @id @default(uuid())
-
   fulfillmentId String
   type ShipmentType
-
   courierId String
   shippingRateId String?
-
   trackingNumber String @unique
-
   status ShipmentStatus @default(PENDING)
-
   shippingMethod ShippingMethod
-
   deliveryFee Decimal @db.Decimal(12,2)
-
   weight Float?
   volumetricWeight Float?
   chargeableWeight Float?
-
   estimatedDeliveryDate DateTime?
-
   pickupStationId String?
-
   handedToCourierAt DateTime?
   inTransitAt DateTime?
   deliveredAt DateTime?
   failedAt DateTime?
-
   failureReason String?
-
   metadata Json?
   returnRequestId String?
-
   fulfillment Fulfillment @relation(fields: [fulfillmentId], references: [id])
-
   courier Courier @relation(fields: [courierId], references: [id])
-
   shippingRate ShippingRate? @relation(fields: [shippingRateId], references: [id])
-
   pickupStation PickupStation? @relation(fields: [pickupStationId], references: [id])
   orderId String 
   order Order @relation(fields: [orderId], references: [id])
   events ShipmentEvent[]
   items ShipmentItem[]
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   @@index([trackingNumber])
   @@index([status])
   @@index([courierId])
@@ -1030,25 +1032,21 @@ model Shipment {
 
 model ShipmentItem {
   id String @id @default(uuid())
-
   shipmentId String
   orderItemId String
-
   quantity Int
-
   shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-
   orderItem OrderItem @relation(fields: [orderItemId], references: [id])
-
   @@unique([shipmentId, orderItemId])
 }
 
 model ShippingQuote {
   id String @id @default(uuid())
+
   checkoutSessionId String
+
   courierName String
   shippingMethod ShippingMethod
-
   zoneName String
 
   weight Float
@@ -1057,98 +1055,19 @@ model ShippingQuote {
 
   baseFee Decimal @db.Decimal(12,2)
   surcharges Decimal @db.Decimal(12,2)
-
   totalFee Decimal @db.Decimal(12,2)
 
   estimatedMinDays Int
   estimatedMaxDays Int
 
   rawCalculation Json?
-  createdAt DateTime @default(now())
-  checkoutSessions CheckoutSession[]
-}
-
-model DeliverySLA {
-  id String @id @default(uuid())
-
-  courierId String
-  zoneId String
-
-  shippingMethod ShippingMethod
-
-  minDays Int
-  maxDays Int
-
-  cutoffHour Int?
-
-  sameDaySupported Boolean @default(false)
-  courier Courier @relation(fields: [courierId], references: [id])
-  zone ShippingZone @relation(fields: [zoneId], references: [id])
-
-  @@index([courierId])
-  @@index([zoneId])
-}
-
-model Courier {
-  id String @id @default(uuid())
-  name String @unique
-  phone String?
-  email String?
-  website String?
-  isActive Boolean @default(true)
-  rates ShippingRate[]
-  shipments Shipment[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  pickupStations PickupStation[]
-
-  deliverySLAs DeliverySLA[]
-
-  courierWebhookLogs CourierWebhookLog[]
-
-  returnShipments ReturnShipment[]
-}
-
-model CourierWebhookLog {
-  id String @id @default(uuid())
-
-  courierId String
-
-  eventType String
-
-  payload Json
-
-  processed Boolean @default(false)
-
-  error String?
 
   createdAt DateTime @default(now())
-  courier Courier @relation(fields: [courierId], references: [id])
-  @@index([courierId])
-  @@index([processed])
+  checkoutSession CheckoutSession @relation("CheckoutSessionQuotes", fields: [checkoutSessionId],references: [id])
+  selectedForSession CheckoutSession? @relation("CheckoutSessionSelectedQuote")
+
+  @@index([checkoutSessionId])
 }
-
-model ReturnShipment {
-  id String @id @default(uuid())
-
-  returnRequestId String
-
-  courierId String?
-
-  trackingNumber String?
-
-  status ReturnShipmentStatus @default(PENDING)
-
-  receivedAt DateTime?
-
-  returnRequest ReturnRequest @relation(fields: [returnRequestId], references: [id])
-  courier Courier? @relation(fields: [courierId], references: [id])
-  createdAt DateTime @default(now())
-  @@index([returnRequestId])
-  @@index([courierId])
-  @@index([status])
-}
-
 model ShippingZoneLGA {
   id String @id @default(uuid())
   zoneId String
@@ -1181,34 +1100,24 @@ model ShippingZone {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   carts Cart[]
-
   deliverySLAs DeliverySLA[]
 }
 
-
 model Fulfillment {
   id String @id @default(uuid())
-
   orderId String
   warehouseId String
-
   status FulfillmentStatus
-
   pickingStartedAt DateTime?
   packedAt DateTime?
   dispatchedAt DateTime?
-
   notes String?
-
   order Order @relation(fields: [orderId], references: [id])
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
-
   items FulfillmentItem[]
   shipments Shipment[]
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   @@index([orderId])
   @@index([warehouseId])
   @@index([status])
@@ -1216,12 +1125,9 @@ model Fulfillment {
 
 model FulfillmentItem {
   id String @id @default(uuid())
-
   fulfillmentId String
   orderItemId String
-
   quantity Int
-
   fulfillment Fulfillment @relation(fields: [fulfillmentId], references: [id], onDelete: Cascade)
   orderItem OrderItem @relation(fields: [orderItemId], references: [id])
   @@unique([fulfillmentId, orderItemId])
@@ -1233,30 +1139,42 @@ model CheckoutSession {
   cartId String
   userId String
 
-  shippingMethod ShippingMethod
-
-  deliveryStateId String?
   deliveryLgaId String?
-
-  shippingQuoteId String?
 
   subtotal Decimal @db.Decimal(12,2)
   deliveryFee Decimal @db.Decimal(12,2)
   totalAmount Decimal @db.Decimal(12,2)
 
   expiresAt DateTime
-
   completedAt DateTime?
-
   createdAt DateTime @default(now())
 
   cart Cart @relation(fields: [cartId], references: [id])
   user User @relation(fields: [userId], references: [id])
 
-  shippingQuote ShippingQuote? @relation(fields: [shippingQuoteId], references: [id])
+  shippingQuotes ShippingQuote[] @relation("CheckoutSessionQuotes")
+
+  shippingQuoteId String? @unique
+  shippingQuote ShippingQuote? @relation("CheckoutSessionSelectedQuote", fields: [shippingQuoteId], references: [id])
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model DeliverySLA {
+  id String @id @default(uuid())
+  courierId String
+  zoneId String
+  shippingMethod ShippingMethod
+  minDays Int
+  maxDays Int
+  cutoffHour Int?
+  sameDaySupported Boolean @default(false)
+  courier Courier @relation(fields: [courierId], references: [id])
+  zone ShippingZone @relation(fields: [zoneId], references: [id])
+  @@index([courierId])
+  @@index([zoneId])
+  @@unique([courierId, zoneId, shippingMethod])
 }
 
 model PickupStation {
@@ -1317,6 +1235,21 @@ model LGA {
   carts Cart[]
   pickupStations PickupStation[]
 }
+model ReturnShipment {
+  id String @id @default(uuid())
+  returnRequestId String
+  courierId String?
+  trackingNumber String?
+  status ReturnShipmentStatus @default(PENDING)
+  receivedAt DateTime?
+  returnRequest ReturnRequest @relation(fields: [returnRequestId], references: [id])
+  courier Courier? @relation(fields: [courierId], references: [id])
+  createdAt DateTime @default(now())
+  @@index([returnRequestId])
+  @@index([courierId])
+  @@index([status])
+}
+
 
 // MARKETING (PRODUCTION GRADE)
 model Coupon {
@@ -1328,10 +1261,8 @@ model Coupon {
   // Lifecycle
   status      CouponStatus @default(DRAFT)
   isActive    Boolean      @default(true)
-
   startsAt    DateTime?
   expiresAt   DateTime?
-
   archivedAt  DateTime?
   deletedAt   DateTime?
   // Discount Engine
@@ -1350,56 +1281,42 @@ model Coupon {
   PERCENTAGE   => percentOff required
   FREE_SHIPPING => freeShipping = true
   */
-
   amountOff   Decimal? @db.Decimal(12,2)
   percentOff  Decimal? @db.Decimal(5,2)
-
   /*
   Example:
   20% OFF capped at ₦15,000
   */
-
   maxDiscountAmount Decimal? @db.Decimal(12,2)
-
   freeShipping Boolean @default(false)
   // Qualification Rules
   minimumOrderAmount Decimal? @db.Decimal(12,2)
   minimumItemQuantity Int?
-
   firstOrderOnly Boolean @default(false)
-
   appliesTo CouponAppliesTo @default(ALL_PRODUCTS)
   // Abuse Prevention
   usageLimit   Int?
   usedCount    Int @default(0)
-
   perUserLimit Int @default(1)
-
   /*
   Prevent stacking with other promotions
   */
-
   isStackable Boolean @default(false)
   excludeSaleItems Boolean @default(false)
   /*
   internal anti-fraud metadata
   */
-
   metadata Json?
   // Audit
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   // Relations
   productRules   CouponProductRule[]
   categoryRules  CouponCategoryRule[]
   customerRules  CouponCustomerRule[]
-
   reservations   CouponReservation[]
   usages         CouponUsage[]
-
   orders         Order[]
-
   @@index([status, isActive])
   @@index([startsAt, expiresAt])
   @@index([usedCount])
@@ -1409,15 +1326,11 @@ model Coupon {
 // PRODUCT TARGETING
 model CouponProductRule {
   id String @id @default(uuid())
-
   couponId  String
   productId String
-
   createdAt DateTime @default(now())
-
   coupon  Coupon  @relation(fields: [couponId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
   @@unique([couponId, productId])
   @@index([productId])
 }
@@ -1689,7 +1602,7 @@ enum OrderStatus {
 
 enum PaymentStatus {
   PENDING
-  SUCCESS
+  PAID
   FAILED
 }
 

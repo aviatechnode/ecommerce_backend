@@ -20,13 +20,9 @@ const decimalField = (fieldName: string) =>
  */
 export const createShippingRateSchema = z
   .object({
-    courierId: z
-      .string()
-      .uuid("Courier ID must be a valid UUID"),
+    courierId: z.string().uuid("Courier ID must be a valid UUID"),
 
-    zoneId: z
-      .string()
-      .uuid("Zone ID must be a valid UUID"),
+    zoneId: z.string().uuid("Zone ID must be a valid UUID"),
 
     name: z
       .string()
@@ -72,42 +68,22 @@ export const createShippingRateSchema = z
       .min(0, "Insurance percent cannot be negative")
       .default(0),
 
-    estimatedDaysMin: z.coerce
+    priority: z.coerce
       .number({
-        invalid_type_error: "Minimum estimated days must be a valid number",
+        invalid_type_error: "Priority must be a valid number",
       })
-      .int("Minimum estimated days must be an integer")
-      .min(0, "Minimum estimated days cannot be negative"),
+      .int("Priority must be an integer")
+      .min(0, "Priority cannot be negative")
+      .default(0),
 
-    estimatedDaysMax: z.coerce
-      .number({
-        invalid_type_error: "Maximum estimated days must be a valid number",
-      })
-      .int("Maximum estimated days must be an integer")
-      .min(0, "Maximum estimated days cannot be negative"),
+    supportsCOD: z.boolean().optional().default(false),
 
-    supportsCOD: z
-      .boolean()
-      .optional()
-      .default(false),
-
-    isActive: z
-      .boolean()
-      .optional()
-      .default(true),
+    isActive: z.boolean().optional().default(true),
   })
   .refine((data) => data.maxWeight >= data.minWeight, {
     message: "Maximum weight must be greater than or equal to minimum weight",
     path: ["maxWeight"],
-  })
-  .refine(
-    (data) => data.estimatedDaysMax >= data.estimatedDaysMin,
-    {
-      message:
-        "Maximum estimated days must be greater than or equal to minimum estimated days",
-      path: ["estimatedDaysMax"],
-    }
-  );
+  });
 
 /**
  * Update Shipping Rate Schema
@@ -152,16 +128,10 @@ export const updateShippingRateSchema = z
       .min(0, "Insurance percent cannot be negative")
       .optional(),
 
-    estimatedDaysMin: z.coerce
+    priority: z.coerce
       .number()
-      .int("Minimum estimated days must be an integer")
-      .min(0)
-      .optional(),
-
-    estimatedDaysMax: z.coerce
-      .number()
-      .int("Maximum estimated days must be an integer")
-      .min(0)
+      .int("Priority must be an integer")
+      .min(0, "Priority cannot be negative")
       .optional(),
 
     supportsCOD: z.boolean().optional(),
@@ -178,34 +148,27 @@ export const updateShippingRateSchema = z
         "Maximum weight must be greater than or equal to minimum weight",
       path: ["maxWeight"],
     }
-  )
-  .refine(
-    (data) =>
-      data.estimatedDaysMin === undefined ||
-      data.estimatedDaysMax === undefined ||
-      data.estimatedDaysMax >= data.estimatedDaysMin,
-    {
-      message:
-        "Maximum estimated days must be greater than or equal to minimum estimated days",
-      path: ["estimatedDaysMax"],
-    }
   );
 
 /**
  * Params Schema (for :id validation)
  */
 export const shippingRateIdParamSchema = z.object({
-  id: z
-    .string()
-    .uuid("Shipping Rate ID must be a valid UUID"),
+  id: z.string().uuid("Shipping Rate ID must be a valid UUID"),
 });
 
 /* =========================================================
 TYPES
 ========================================================= */
 
-export type CreateShippingRateInput = z.infer<typeof createShippingRateSchema>;
+export type CreateShippingRateInput = z.infer<
+  typeof createShippingRateSchema
+>;
 
-export type UpdateShippingRateInput = z.infer<typeof updateShippingRateSchema>;
+export type UpdateShippingRateInput = z.infer<
+  typeof updateShippingRateSchema
+>;
 
-export type ShippingRateIdParamInput = z.infer<typeof shippingRateIdParamSchema>;
+export type ShippingRateIdParamInput = z.infer<
+  typeof shippingRateIdParamSchema
+>;

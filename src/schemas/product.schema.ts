@@ -214,5 +214,4 @@ export const createProductSchema = z.object({
 // UPDATE PRODUCT SCHEMA
 //////////////////////////////////////////////////////////
 
-export const updateProductSchema =
-  createProductSchema.partial();
+export const updateProductSchema = createProductSchema.partial();

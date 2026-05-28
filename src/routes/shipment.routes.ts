@@ -1,8 +1,14 @@
 import { Router } from "express";
+
 import { ShipmentController } from "../controllers/shipment.controller.js";
+
 import { protect } from "../middlewares/auth.middleware.js";
 
 const router = Router();
+
+/* =========================================================
+PROTECTED ROUTES
+========================================================= */
 
 router.use(protect);
 
@@ -10,22 +16,46 @@ router.use(protect);
 SHIPMENT ROUTES
 ========================================================= */
 
-// CREATE
-router.post("/", ShipmentController.create);
+// CREATE SHIPMENT
+router.post(
+  "/",
+  ShipmentController.create
+);
 
-// GET ALL
-router.get("/", ShipmentController.getAll);
+// GET ALL SHIPMENTS
+router.get(
+  "/",
+  ShipmentController.getAll
+);
 
-// GET ONE
-router.get("/:id", ShipmentController.getById);
+// TRACK SHIPMENT
+router.get(
+  "/track/:trackingNumber",
+  ShipmentController.trackShipment
+);
+
+// GET SHIPMENT BY ID
+router.get(
+  "/:id",
+  ShipmentController.getById
+);
 
 // UPDATE FULL SHIPMENT
-router.patch("/:id", ShipmentController.update);
+router.patch(
+  "/:id",
+  ShipmentController.update
+);
 
-// UPDATE STATUS ONLY
-router.patch("/:id/status", ShipmentController.updateStatus);
+// UPDATE SHIPMENT STATUS
+router.patch(
+  "/:id/status",
+  ShipmentController.updateStatus
+);
 
-// DELETE
-router.delete("/:id", ShipmentController.remove);
+// DELETE SHIPMENT
+router.delete(
+  "/:id",
+  ShipmentController.remove
+);
 
 export default router;

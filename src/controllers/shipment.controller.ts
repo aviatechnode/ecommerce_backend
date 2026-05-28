@@ -1,16 +1,20 @@
 import type { Request, Response } from "express";
+
 import { ShipmentStatus } from "@prisma/client";
+
+import {
+  updateShipmentStatusSchema,
+} from "../schemas/shipment/shipment.schema.js";
 
 import { ShipmentService } from "../services/shipment/shipment.service.js";
 
-/* =========================================================
-SHIPMENT CONTROLLER
-========================================================= */
 
+// SHIPMENT CONTROLLER
 export class ShipmentController {
   /* =========================================================
   CREATE SHIPMENT
   ========================================================= */
+
   static async create(req: Request, res: Response) {
     try {
       const shipment = await ShipmentService.createShipment(req.body);
@@ -28,9 +32,7 @@ export class ShipmentController {
     }
   }
 
-  /* =========================================================
-  GET ALL SHIPMENTS
-  ========================================================= */
+  // GET ALL SHIPMENTS
   static async getAll(req: Request, res: Response) {
     try {
       const query: {
@@ -41,33 +43,22 @@ export class ShipmentController {
         search?: string;
       } = {};
 
-      // PAGE
-      if (
-        typeof req.query.page === "string" &&
-        req.query.page.trim() !== ""
-      ) {
+      if (typeof req.query.page === "string" && req.query.page.trim() !== "") {
         query.page = Number(req.query.page);
       }
 
-      // LIMIT
-      if (
-        typeof req.query.limit === "string" &&
-        req.query.limit.trim() !== ""
-      ) {
+      if (typeof req.query.limit === "string" && req.query.limit.trim() !== "") {
         query.limit = Number(req.query.limit);
       }
 
-      // STATUS
       if (typeof req.query.status === "string") {
         query.status = req.query.status as ShipmentStatus;
       }
 
-      // COURIER ID
       if (typeof req.query.courierId === "string") {
         query.courierId = req.query.courierId;
       }
 
-      // SEARCH
       if (typeof req.query.search === "string") {
         query.search = req.query.search;
       }
@@ -86,15 +77,11 @@ export class ShipmentController {
     }
   }
 
-  /* =========================================================
-  GET SHIPMENT BY ID
-  ========================================================= */
+  // GET SHIPMENT BY ID
   static async getById(req: Request, res: Response) {
     try {
       const shipmentId =
-        typeof req.params.id === "string"
-          ? req.params.id
-          : null;
+        typeof req.params.id === "string" ? req.params.id : null;
 
       if (!shipmentId) {
         return res.status(400).json({
@@ -103,9 +90,7 @@ export class ShipmentController {
         });
       }
 
-      const shipment = await ShipmentService.getById(
-        shipmentId
-      );
+      const shipment = await ShipmentService.getById(shipmentId);
 
       return res.status(200).json({
         success: true,
@@ -119,15 +104,11 @@ export class ShipmentController {
     }
   }
 
-  /* =========================================================
-  UPDATE SHIPMENT
-  ========================================================= */
+  // UPDATE SHIPMENT
   static async update(req: Request, res: Response) {
     try {
       const shipmentId =
-        typeof req.params.id === "string"
-          ? req.params.id
-          : null;
+        typeof req.params.id === "string" ? req.params.id : null;
 
       if (!shipmentId) {
         return res.status(400).json({
@@ -154,15 +135,11 @@ export class ShipmentController {
     }
   }
 
-  /* =========================================================
-  UPDATE SHIPMENT STATUS
-  ========================================================= */
+  // UPDATE SHIPMENT STATUS
   static async updateStatus(req: Request, res: Response) {
     try {
       const shipmentId =
-        typeof req.params.id === "string"
-          ? req.params.id
-          : null;
+        typeof req.params.id === "string" ? req.params.id : null;
 
       if (!shipmentId) {
         return res.status(400).json({
@@ -171,18 +148,21 @@ export class ShipmentController {
         });
       }
 
-      if (!req.body.status) {
-        return res.status(400).json({
-          success: false,
-          message: "Shipment status is required",
-        });
-      }
+      const parsed = updateShipmentStatusSchema.parse(req.body);
 
       const shipment = await ShipmentService.updateStatus({
         id: shipmentId,
-        status: req.body.status as ShipmentStatus,
+        status: parsed.status,
+
         ...(typeof req.body.location === "string"
           ? { location: req.body.location }
+          : {}),
+
+        // ✅ FIXED HERE (null-safe)
+        ...(parsed.failureReason != null
+          ? {
+              failureReason: parsed.failureReason,
+            }
           : {}),
       });
 
@@ -202,12 +182,11 @@ export class ShipmentController {
   /* =========================================================
   DELETE SHIPMENT
   ========================================================= */
+
   static async remove(req: Request, res: Response) {
     try {
       const shipmentId =
-        typeof req.params.id === "string"
-          ? req.params.id
-          : null;
+        typeof req.params.id === "string" ? req.params.id : null;
 
       if (!shipmentId) {
         return res.status(400).json({
@@ -233,6 +212,7 @@ export class ShipmentController {
   /* =========================================================
   TRACK SHIPMENT
   ========================================================= */
+
   static async trackShipment(req: Request, res: Response) {
     try {
       const trackingNumber =
@@ -247,9 +227,7 @@ export class ShipmentController {
         });
       }
 
-      const shipment = await ShipmentService.trackShipment(
-        trackingNumber
-      );
+      const shipment = await ShipmentService.trackShipment(trackingNumber);
 
       return res.status(200).json({
         success: true,

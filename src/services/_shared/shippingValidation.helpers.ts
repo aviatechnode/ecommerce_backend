@@ -41,9 +41,11 @@ export async function assertUniqueShippingRate(params: {
       zoneId,
       isActive: true,
 
-      ...(excludeId && {
-        id: { not: excludeId },
-      }),
+      ...(excludeId
+        ? {
+            id: { not: excludeId },
+          }
+        : {}),
 
       AND: [
         { minWeight: { lte: maxWeight } },
@@ -65,30 +67,37 @@ export async function assertUniqueShippingRate(params: {
 RANGE VALIDATION
 ========================================================= */
 
-export function assertValidRange(min: number, max: number, label: string) {
+export function assertValidRange(
+  min: number,
+  max: number,
+  label: string
+) {
   if (max < min) {
     throw new Error(`${label}: max must be >= min`);
   }
 }
 
-
 /* =========================================================
 STRING NORMALIZERS
+IMPORTANT: NEVER RETURN undefined (Prisma strict mode fix)
 ========================================================= */
 
-export function normalizeString(value?: string | null) {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
+export function normalizeString(
+  value?: string | null
+): string | null {
+  if (value == null) return null;
 
   const trimmed = value.trim();
 
-  return trimmed.length ? trimmed : null;
+  return trimmed.length > 0 ? trimmed : null;
 }
 
-export function normalizeEmail(value?: string | null) {
+export function normalizeEmail(
+  value?: string | null
+): string | null {
   const normalized = normalizeString(value);
 
-  return normalized?.toLowerCase() ?? normalized;
+  return normalized ? normalized.toLowerCase() : null;
 }
 
 /* =========================================================
@@ -117,11 +126,13 @@ export async function assertUniqueCourier(params: {
     where: {
       name: params.name,
 
-      ...(params.excludeId && {
-        NOT: {
-          id: params.excludeId,
-        },
-      }),
+      ...(params.excludeId
+        ? {
+            NOT: {
+              id: params.excludeId,
+            },
+          }
+        : {}),
     },
 
     select: {
@@ -130,9 +141,7 @@ export async function assertUniqueCourier(params: {
   });
 
   if (existing) {
-    throw new Error(
-      "Courier with this name already exists"
-    );
+    throw new Error("Courier with this name already exists");
   }
 
   return true;

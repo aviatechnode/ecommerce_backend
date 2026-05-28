@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prismadb.js";
-import { ShipmentStatus, ShippingMethod } from "@prisma/client";
+
+import { Prisma, ShipmentStatus } from "@prisma/client";
 
 import {
   createShipmentSchema,
@@ -8,95 +9,151 @@ import {
   type CreateShipmentInput,
   type UpdateShipmentInput,
 } from "../../schemas/shipment/shipment.schema.js";
+
 import { ShipmentEventService } from "./shipment-event.service.js";
 
-// SHIPMENT SERVICE
+/* =========================================================
+HELPER: SAFE JSON NORMALIZER (CRITICAL FIX)
+========================================================= */
+
+const jsonField = (key: string, value: unknown) => {
+  if (value === undefined || value === null) return {};
+  return { [key]: value as Prisma.InputJsonValue };
+};
+
+/* =========================================================
+SHIPMENT SERVICE
+========================================================= */
+
 export class ShipmentService {
-  
-  // CREATE SHIPMENT
+  /* =========================================================
+  CREATE SHIPMENT
+  ========================================================= */
+
   static async createShipment(payload: CreateShipmentInput) {
     const parsed = createShipmentSchema.parse(payload);
 
-   // 1. Validate order
     const order = await prisma.order.findUnique({
       where: { id: parsed.orderId },
+      include: { items: true },
     });
+
     if (!order) throw new Error("Order not found");
 
-    // 2. Validate courier
+    const fulfillment = await prisma.fulfillment.findUnique({
+      where: { id: parsed.fulfillmentId },
+    });
+
+    if (!fulfillment) throw new Error("Fulfillment not found");
+
     const courier = await prisma.courier.findUnique({
       where: { id: parsed.courierId },
     });
+
     if (!courier) throw new Error("Courier not found");
 
-    // 3. Validate pickup station
     if (parsed.pickupStationId) {
-      const station = await prisma.pickupStation.findUnique({
+      const pickupStation = await prisma.pickupStation.findUnique({
         where: { id: parsed.pickupStationId },
       });
 
-      if (!station || !station.isActive) {
+      if (!pickupStation || !pickupStation.isActive) {
         throw new Error("Invalid or inactive pickup station");
       }
     }
-    
-    // 4. Validate shipping rate (if provided)
+
     if (parsed.shippingRateId) {
-      const rate = await prisma.shippingRate.findUnique({
+      const shippingRate = await prisma.shippingRate.findUnique({
         where: { id: parsed.shippingRateId },
       });
 
-      if (!rate || !rate.isActive) {
+      if (!shippingRate || !shippingRate.isActive) {
         throw new Error("Invalid or inactive shipping rate");
       }
     }
 
-    // 5. Generate tracking number
-    const trackingNumber = `TRK-${Date.now()}-${Math.floor(
-      Math.random() * 9999
-    )}`;
+    if (parsed.returnRequestId) {
+      const returnRequest = await prisma.returnRequest.findUnique({
+        where: { id: parsed.returnRequestId },
+      });
 
-    // 6. Create shipment
+      if (!returnRequest) {
+        throw new Error("Return request not found");
+      }
+    }
+
+    const orderItemIds = order.items.map((i) => i.id);
+
+    for (const item of parsed.items) {
+      if (!orderItemIds.includes(item.orderItemId)) {
+        throw new Error(
+          `Order item ${item.orderItemId} does not belong to this order`
+        );
+      }
+
+      const orderItem = order.items.find(
+        (i) => i.id === item.orderItemId
+      );
+
+      if (!orderItem) throw new Error("Order item not found");
+
+      if (item.quantity > orderItem.quantity) {
+        throw new Error(
+          `Shipment quantity exceeds order quantity for item ${item.orderItemId}`
+        );
+      }
+    }
+
+    const trackingNumber =
+      parsed.trackingNumber ??
+      `TRK-${Date.now()}-${Math.floor(Math.random() * 999999)}`;
+
     const shipment = await prisma.shipment.create({
       data: {
+        fulfillmentId: parsed.fulfillmentId,
         orderId: parsed.orderId,
+        type: parsed.type,
         courierId: parsed.courierId,
         shippingRateId: parsed.shippingRateId ?? null,
-
         trackingNumber,
         status: parsed.status ?? ShipmentStatus.PENDING,
-
         shippingMethod: parsed.shippingMethod,
-
         deliveryFee: parsed.deliveryFee,
-        heavyItemSurcharge: parsed.heavyItemSurcharge ?? null,
-        fragileFee: parsed.fragileFee ?? null,
-        sameDayFee: parsed.sameDayFee ?? null,
-
         weight: parsed.weight ?? null,
         volumetricWeight: parsed.volumetricWeight ?? null,
         chargeableWeight: parsed.chargeableWeight ?? null,
-
-        estimatedDays: parsed.estimatedDays ?? null,
-
-        shippedAt: parsed.shippedAt ?? null,
-        deliveredAt: parsed.deliveredAt ?? null,
-
+        estimatedDeliveryDate: parsed.estimatedDeliveryDate ?? null,
         pickupStationId: parsed.pickupStationId ?? null,
+        handedToCourierAt: parsed.handedToCourierAt ?? null,
+        inTransitAt: parsed.inTransitAt ?? null,
+        deliveredAt: parsed.deliveredAt ?? null,
+        failedAt: parsed.failedAt ?? null,
+        failureReason: parsed.failureReason ?? null,
+        ...(parsed.metadata != null && {
+  metadata: parsed.metadata as Prisma.InputJsonValue,
+}),
 
-        notes: parsed.notes ?? null,
-        failedReason: parsed.failedReason ?? null,
+        returnRequestId: parsed.returnRequestId ?? null,
+
+        items: {
+          create: parsed.items.map((item) => ({
+            orderItemId: item.orderItemId,
+            quantity: item.quantity,
+          })),
+        },
       },
+
       include: {
+        fulfillment: true,
         courier: true,
-        order: true,
         shippingRate: true,
         pickupStation: true,
+        order: true,
+        items: { include: { orderItem: true } },
         events: true,
       },
     });
 
-    // 7. Initial event
     await ShipmentEventService.addSystemEvent({
       shipmentId: shipment.id,
       status: shipment.status,
@@ -107,7 +164,10 @@ export class ShipmentService {
     return shipment;
   }
 
-  // GET ALL
+  /* =========================================================
+  GET ALL
+  ========================================================= */
+
   static async getAll(params?: {
     page?: number;
     limit?: number;
@@ -144,15 +204,17 @@ export class ShipmentService {
       prisma.shipment.findMany({
         where,
         include: {
+          fulfillment: true,
           courier: true,
           order: true,
+          shippingRate: true,
           pickupStation: true,
+          items: { include: { orderItem: true } },
         },
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: "desc" },
       }),
-
       prisma.shipment.count({ where }),
     ]);
 
@@ -167,21 +229,23 @@ export class ShipmentService {
     };
   }
 
-  
-  // GET BY ID
+  /* =========================================================
+  GET BY ID
+  ========================================================= */
+
   static async getById(id: string) {
     const { id: shipmentId } = shipmentIdParamSchema.parse({ id });
 
     const shipment = await prisma.shipment.findUnique({
       where: { id: shipmentId },
       include: {
+        fulfillment: true,
         courier: true,
         order: true,
         shippingRate: true,
         pickupStation: true,
-        events: {
-          orderBy: { createdAt: "asc" },
-        },
+        items: { include: { orderItem: true } },
+        events: { orderBy: { createdAt: "asc" } },
       },
     });
 
@@ -190,42 +254,108 @@ export class ShipmentService {
     return shipment;
   }
 
-  // UPDATE SHIPMENT (SAFE PATCH)
-  static async updateShipment(
-    id: string,
-    payload: UpdateShipmentInput
-  ) {
+  /* =========================================================
+  UPDATE SHIPMENT
+  ========================================================= */
+
+  static async updateShipment(id: string, payload: UpdateShipmentInput) {
     const { id: shipmentId } = shipmentIdParamSchema.parse({ id });
     const parsed = updateShipmentSchema.parse(payload);
 
     const existing = await prisma.shipment.findUnique({
       where: { id: shipmentId },
+      include: { items: true },
     });
 
     if (!existing) throw new Error("Shipment not found");
 
-    // Build update safely (NO unsafe spread)
-    const updateData: any = {};
-
-    Object.entries(parsed).forEach(([key, value]) => {
-      if (value !== undefined) {
-        updateData[key] = value;
-      }
-    });
-
     const updated = await prisma.shipment.update({
       where: { id: shipmentId },
-      data: updateData,
+      data: {
+        ...(parsed.metadata != null && {
+        metadata: parsed.metadata as Prisma.InputJsonValue,
+        }),
+        ...(parsed.fulfillmentId !== undefined
+          ? { fulfillmentId: parsed.fulfillmentId }
+          : {}),
+
+        ...(parsed.type !== undefined ? { type: parsed.type } : {}),
+        ...(parsed.courierId !== undefined
+          ? { courierId: parsed.courierId }
+          : {}),
+        ...(parsed.shippingRateId !== undefined
+          ? { shippingRateId: parsed.shippingRateId }
+          : {}),
+        ...(parsed.pickupStationId !== undefined
+          ? { pickupStationId: parsed.pickupStationId }
+          : {}),
+        ...(parsed.returnRequestId !== undefined
+          ? { returnRequestId: parsed.returnRequestId }
+          : {}),
+        ...(parsed.trackingNumber !== undefined
+          ? { trackingNumber: parsed.trackingNumber }
+          : {}),
+        ...(parsed.status !== undefined
+          ? { status: parsed.status }
+          : {}),
+        ...(parsed.shippingMethod !== undefined
+          ? { shippingMethod: parsed.shippingMethod }
+          : {}),
+        ...(parsed.deliveryFee !== undefined
+          ? { deliveryFee: parsed.deliveryFee }
+          : {}),
+        ...(parsed.weight !== undefined
+          ? { weight: parsed.weight }
+          : {}),
+        ...(parsed.volumetricWeight !== undefined
+          ? { volumetricWeight: parsed.volumetricWeight }
+          : {}),
+        ...(parsed.chargeableWeight !== undefined
+          ? { chargeableWeight: parsed.chargeableWeight }
+          : {}),
+        ...(parsed.estimatedDeliveryDate !== undefined
+          ? { estimatedDeliveryDate: parsed.estimatedDeliveryDate }
+          : {}),
+        ...(parsed.handedToCourierAt !== undefined
+          ? { handedToCourierAt: parsed.handedToCourierAt }
+          : {}),
+        ...(parsed.inTransitAt !== undefined
+          ? { inTransitAt: parsed.inTransitAt }
+          : {}),
+        ...(parsed.deliveredAt !== undefined
+          ? { deliveredAt: parsed.deliveredAt }
+          : {}),
+        ...(parsed.failedAt !== undefined
+          ? { failedAt: parsed.failedAt }
+          : {}),
+        ...(parsed.failureReason !== undefined
+          ? { failureReason: parsed.failureReason }
+          : {}),
+
+        ...(parsed.items
+          ? {
+              items: {
+                deleteMany: {},
+                create: parsed.items.map((item) => ({
+                  orderItemId: item.orderItemId,
+                  quantity: item.quantity,
+                })),
+              },
+            }
+          : {}),
+      },
+
       include: {
+        fulfillment: true,
         courier: true,
         order: true,
         shippingRate: true,
         pickupStation: true,
+        items: { include: { orderItem: true } },
         events: true,
       },
     });
 
-    // Status change tracking
     if (parsed.status && parsed.status !== existing.status) {
       await ShipmentEventService.logStatusChange({
         shipmentId,
@@ -236,32 +366,55 @@ export class ShipmentService {
     return updated;
   }
 
-  
-  // UPDATE STATUS ONLY
+  /* =========================================================
+  UPDATE STATUS
+  ========================================================= */
+
   static async updateStatus(params: {
     id: string;
     status: ShipmentStatus;
     location?: string;
+    failureReason?: string;
   }) {
     const shipment = await this.getById(params.id);
 
+    const updateData: any = {
+      status: params.status,
+    };
+
+    if (params.status === ShipmentStatus.IN_TRANSIT) {
+      updateData.inTransitAt = new Date();
+    }
+
+    if (params.status === ShipmentStatus.DELIVERED) {
+      updateData.deliveredAt = new Date();
+    }
+
+    if (params.status === ShipmentStatus.FAILED) {
+      updateData.failedAt = new Date();
+      updateData.failureReason = params.failureReason ?? null;
+    }
+
     const updated = await prisma.shipment.update({
       where: { id: shipment.id },
-      data: {
-        status: params.status,
-      },
+      data: updateData,
     });
 
     await ShipmentEventService.logStatusChange({
       shipmentId: shipment.id,
       status: params.status,
-      ...(params.location !== undefined ? { location: params.location } : {}),
+      ...(params.location !== undefined
+        ? { location: params.location }
+        : {}),
     });
 
     return updated;
   }
 
-  // DELETE SHIPMENT
+  /* =========================================================
+  DELETE
+  ========================================================= */
+
   static async deleteShipment(id: string) {
     const { id: shipmentId } = shipmentIdParamSchema.parse({ id });
 
@@ -281,16 +434,18 @@ export class ShipmentService {
     });
   }
 
-  // TRACK SHIPMENT
+  /* =========================================================
+  TRACK
+  ========================================================= */
+
   static async trackShipment(trackingNumber: string) {
     const shipment = await prisma.shipment.findUnique({
       where: { trackingNumber },
       include: {
-        events: {
-          orderBy: { createdAt: "asc" },
-        },
         courier: true,
         pickupStation: true,
+        items: { include: { orderItem: true } },
+        events: { orderBy: { createdAt: "asc" } },
       },
     });
 

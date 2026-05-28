@@ -15,28 +15,17 @@ import {
 
 const router = Router();
 
-//////////////////////////////////////////////////////////
-// PUBLIC ROUTES
-//////////////////////////////////////////////////////////
+/* =========================
+PUBLIC
+========================= */
 
-/**
- * GET ALL PRODUCTS
- * Supports filters/search/query params inside controller
- */
 router.get("/", getProducts);
-
-/**
- * GET SINGLE PRODUCT
- */
 router.get("/:id", getProduct);
 
-//////////////////////////////////////////////////////////
-// PROTECTED ROUTES
-//////////////////////////////////////////////////////////
+/* =========================
+PROTECTED - CORE PRODUCT
+========================= */
 
-/**
- * CREATE PRODUCT
- */
 router.post(
   "/",
   protect,
@@ -44,9 +33,6 @@ router.post(
   createProduct
 );
 
-/**
- * UPDATE PRODUCT
- */
 router.patch(
   "/:id",
   protect,
@@ -54,9 +40,6 @@ router.patch(
   updateProduct
 );
 
-/**
- * SOFT DELETE PRODUCT
- */
 router.delete(
   "/:id",
   protect,

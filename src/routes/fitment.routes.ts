@@ -8,8 +8,18 @@ import {
   createMake,
   createModel,
   createTrim,
+  deleteEngine,
+  deleteGeneration,
+  deleteMake,
+  deleteModel,
+  deleteTrim,
   getProductsByFitment,
   getVehicleTree,
+  updateEngine,
+  updateGeneration,
+  updateMake,
+  updateModel,
+  updateTrim,
 } from "../controllers/fitment.controller.js";
 
 const router = Router();
@@ -50,3 +60,24 @@ router.get(
 );
 
 export default router;
+
+
+/* =========================================================
+DELETE
+========================================================= */
+
+router.delete("/makes/:id", deleteMake);
+router.delete("/models/:id", deleteModel);
+router.delete("/generations/:id", deleteGeneration);
+router.delete("/engines/:id", deleteEngine);
+router.delete("/trims/:id", deleteTrim);
+
+/* =========================================================
+UPDATE
+========================================================= */
+
+router.put("/makes/:id", updateMake);
+router.put("/models/:id", updateModel);
+router.put("/generations/:id", updateGeneration);
+router.put("/engines/:id", updateEngine);
+router.put("/trims/:id", updateTrim);

@@ -9,7 +9,17 @@ const router = Router();
  * POST /api/checkout
  * - Auth required
  * - Idempotent
+ * - Creates checkout session
+ * - Generates shipping quote
+ * - Reserves stock
+ * - Creates order + shipment
+ * - Initializes payment
  */
-router.post("/", protect, idempotencyMiddleware, checkout);
+router.post(
+  "/",
+  protect,
+  idempotencyMiddleware,
+  checkout
+);
 
 export default router;

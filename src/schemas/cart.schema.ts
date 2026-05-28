@@ -1,37 +1,44 @@
 import { z } from "zod";
 
 /* =========================================================
-CART SCHEMAS
+   COMMON HELPERS
 ========================================================= */
 
 /**
  * Shared quantity validation
  */
 const quantitySchema = z.coerce
-  .number()
+  .number({
+    invalid_type_error: "Quantity must be a number",
+  })
   .int("Quantity must be a whole number")
   .min(1, "Quantity must be at least 1")
   .max(100, "Quantity cannot exceed 100");
 
 /**
- * UUID validation helper
+ * Shared UUID validation helper
  */
 const uuidSchema = (fieldName: string) =>
-  z.string().uuid(`${fieldName} must be a valid UUID`);
+  z
+    .string({
+      required_error: `${fieldName} is required`,
+      invalid_type_error: `${fieldName} must be a string`,
+    })
+    .uuid(`${fieldName} must be a valid UUID`);
 
 /* =========================================================
-ADD TO CART
+   ADD TO CART
 ========================================================= */
 
 export const addToCartSchema = z
   .object({
     variantId: uuidSchema("Product variant ID"),
-    quantity: quantitySchema,
+    quantity: quantitySchema.default(1),
   })
   .strict();
 
 /* =========================================================
-UPDATE CART ITEM QUANTITY
+   UPDATE CART ITEM QUANTITY
 ========================================================= */
 
 export const updateQuantitySchema = z
@@ -41,7 +48,7 @@ export const updateQuantitySchema = z
   .strict();
 
 /* =========================================================
-REMOVE CART ITEM
+   REMOVE CART ITEM
 ========================================================= */
 
 export const removeCartItemSchema = z
@@ -51,16 +58,13 @@ export const removeCartItemSchema = z
   .strict();
 
 /* =========================================================
-CLEAR CART
+   CLEAR CART
 ========================================================= */
 
-export const clearCartSchema = z
-  .object({})
-  .strict();
+export const clearCartSchema = z.object({}).strict();
 
 /* =========================================================
-UPDATE CART DELIVERY / SHIPPING ESTIMATION
-(From Cart model fields)
+   UPDATE CART DELIVERY / SHIPPING ESTIMATION
 ========================================================= */
 
 export const updateCartDeliverySchema = z
@@ -69,10 +73,23 @@ export const updateCartDeliverySchema = z
     deliveryLgaId: uuidSchema("Delivery LGA ID").optional(),
     shippingZoneId: uuidSchema("Shipping zone ID").optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) =>
+      !!(
+        data.deliveryStateId ||
+        data.deliveryLgaId ||
+        data.shippingZoneId
+      ),
+    {
+      message:
+        "At least one delivery field must be provided",
+      path: ["deliveryStateId"],
+    }
+  );
 
 /* =========================================================
-APPLY SHIPPING ESTIMATION
+   CALCULATE CART SHIPPING
 ========================================================= */
 
 export const calculateCartShippingSchema = z
@@ -83,7 +100,7 @@ export const calculateCartShippingSchema = z
   .strict();
 
 /* =========================================================
-MERGE GUEST CART → USER CART
+   MERGE GUEST CART → USER CART
 ========================================================= */
 
 export const mergeCartSchema = z
@@ -97,22 +114,65 @@ export const mergeCartSchema = z
           })
           .strict()
       )
-      .min(1, "At least one cart item is required"),
+      .min(1, "At least one cart item is required")
+      .max(100, "Too many cart items"),
   })
   .strict();
 
 /* =========================================================
-EXPORT TYPES
+   OPTIONAL: APPLY COUPON
+========================================================= */
+
+export const applyCouponSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .min(1, "Coupon code is required")
+      .max(50, "Coupon code is too long"),
+  })
+  .strict();
+
+/* =========================================================
+   OPTIONAL: REMOVE COUPON
+========================================================= */
+
+export const removeCouponSchema = z.object({}).strict();
+
+/* =========================================================
+   EXPORT TYPES
 ========================================================= */
 
 export type AddToCartInput = z.infer<typeof addToCartSchema>;
-export type UpdateQuantityInput = z.infer<typeof updateQuantitySchema>;
-export type RemoveCartItemInput = z.infer<typeof removeCartItemSchema>;
-export type ClearCartInput = z.infer<typeof clearCartSchema>;
+
+export type UpdateQuantityInput = z.infer<
+  typeof updateQuantitySchema
+>;
+
+export type RemoveCartItemInput = z.infer<
+  typeof removeCartItemSchema
+>;
+
+export type ClearCartInput = z.infer<
+  typeof clearCartSchema
+>;
+
 export type UpdateCartDeliveryInput = z.infer<
   typeof updateCartDeliverySchema
 >;
+
 export type CalculateCartShippingInput = z.infer<
   typeof calculateCartShippingSchema
 >;
-export type MergeCartInput = z.infer<typeof mergeCartSchema>;
+
+export type MergeCartInput = z.infer<
+  typeof mergeCartSchema
+>;
+
+export type ApplyCouponInput = z.infer<
+  typeof applyCouponSchema
+>;
+
+export type RemoveCouponInput = z.infer<
+  typeof removeCouponSchema
+>;

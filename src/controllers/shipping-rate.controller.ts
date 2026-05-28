@@ -11,7 +11,11 @@ export class ShippingRateController {
     res: Response
   ) {
     try {
-      const shippingRate = await ShippingRateService.createRate(req.body);
+      const shippingRate =
+        await ShippingRateService.createRate(
+          req.body
+        );
+
       return res.status(201).json({
         success: true,
         message:
@@ -31,9 +35,14 @@ export class ShippingRateController {
   /**
    * GET ALL SHIPPING RATES
    */
-  static async findAll(_req: Request, res: Response) {
+  static async findAll(
+    _req: Request,
+    res: Response
+  ) {
     try {
-      const shippingRates = await ShippingRateService.getAllRates();
+      const shippingRates =
+        await ShippingRateService.getAllRates();
+
       return res.status(200).json({
         success: true,
         data: shippingRates,
@@ -51,9 +60,16 @@ export class ShippingRateController {
   /**
    * GET SHIPPING RATE BY ID
    */
-  static async findById(req: Request, res: Response) {
+  static async findById(
+    req: Request,
+    res: Response
+  ) {
     try {
-      const rateId = typeof req.params.id === "string" ? req.params.id : null;
+      const rateId =
+        typeof req.params.id === "string"
+          ? req.params.id
+          : null;
+
       if (!rateId) {
         return res.status(400).json({
           success: false,
@@ -62,7 +78,11 @@ export class ShippingRateController {
         });
       }
 
-      const shippingRate = await ShippingRateService.getRateById(rateId);
+      const shippingRate =
+        await ShippingRateService.getRateById(
+          rateId
+        );
+
       return res.status(200).json({
         success: true,
         data: shippingRate,
@@ -80,9 +100,16 @@ export class ShippingRateController {
   /**
    * UPDATE SHIPPING RATE
    */
-  static async update(req: Request, res: Response) {
+  static async update(
+    req: Request,
+    res: Response
+  ) {
     try {
-      const rateId = typeof req.params.id === "string" ? req.params.id : null;
+      const rateId =
+        typeof req.params.id === "string"
+          ? req.params.id
+          : null;
+
       if (!rateId) {
         return res.status(400).json({
           success: false,
@@ -91,7 +118,12 @@ export class ShippingRateController {
         });
       }
 
-      const shippingRate = await ShippingRateService.updateRate(rateId, req.body);
+      const shippingRate =
+        await ShippingRateService.updateRate(
+          rateId,
+          req.body
+        );
+
       return res.status(200).json({
         success: true,
         message:
@@ -111,9 +143,16 @@ export class ShippingRateController {
   /**
    * TOGGLE SHIPPING RATE STATUS
    */
-  static async toggleActive(req: Request, res: Response) {
+  static async toggleActive(
+    req: Request,
+    res: Response
+  ) {
     try {
-      const rateId = typeof req.params.id === "string" ? req.params.id : null;
+      const rateId =
+        typeof req.params.id === "string"
+          ? req.params.id
+          : null;
+
       if (!rateId) {
         return res.status(400).json({
           success: false,
@@ -122,7 +161,11 @@ export class ShippingRateController {
         });
       }
 
-      const shippingRate = await ShippingRateService.toggleRateStatus(rateId);
+      const shippingRate =
+        await ShippingRateService.toggleRateStatus(
+          rateId
+        );
+
       return res.status(200).json({
         success: true,
         message:
@@ -142,7 +185,10 @@ export class ShippingRateController {
   /**
    * DELETE SHIPPING RATE
    */
-  static async delete( req: Request, res: Response) {
+  static async delete(
+    req: Request,
+    res: Response
+  ) {
     try {
       const rateId =
         typeof req.params.id === "string"
@@ -179,9 +225,15 @@ export class ShippingRateController {
   /**
    * FIND BEST SHIPPING RATE
    */
-  static async findBestRate(req: Request, res: Response) {
+  static async findBestRate(
+    req: Request,
+    res: Response
+  ) {
     try {
-      if (typeof req.body.courierId !=="string") {
+      if (
+        typeof req.body.courierId !==
+        "string"
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -189,7 +241,10 @@ export class ShippingRateController {
         });
       }
 
-      if (typeof req.body.zoneId !=="string") {
+      if (
+        typeof req.body.zoneId !==
+        "string"
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -197,11 +252,28 @@ export class ShippingRateController {
         });
       }
 
-      const rate = await ShippingRateService.findBestRate(
+      const weight = Number(
+        req.body.weight
+      );
+
+      if (
+        Number.isNaN(weight) ||
+        weight <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Weight must be a valid number greater than 0",
+        });
+      }
+
+      const rate =
+        await ShippingRateService.findBestRate(
           {
-            courierId: req.body.courierId,
+            courierId:
+              req.body.courierId,
             zoneId: req.body.zoneId,
-            weight: Number(req.body.weight),
+            weight,
           }
         );
 

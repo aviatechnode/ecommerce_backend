@@ -11,11 +11,11 @@ import { WebSocketServer } from "ws";
 import "./jobs/cron.js";
 import "./listeners/notification.listener.js";
 import "./strategies/google.strategy.js";
+import { paystackWebhook } from "./controllers/webhook.controller.js";
 
 /* ================= ROUTES ================= */
 import rbacRoutes from "./routes/rbac.routes.js";
 import checkoutRoutes from "./routes/checkout.routes.js";
-import webhookRoutes from "./routes/webhook.routes.js";
 import categoryRoutes from "./routes/category.routes.js";
 import wishlistRoutes from "./routes/wishlist.routes.js";
 import authRoutes from "./routes/auth.routes.js";
@@ -34,7 +34,6 @@ import warehouseRoutes from "./routes/warehouse.routes.js";
 import fitmentRoutes from "./routes/fitment.routes.js";
 import auditLogRoutes from "./routes/auditlog.routes.js";
 import cartRoutes from "./routes/cart.routes.js";
-import paymentRoutes from "./routes/payment.routes.js";
 import reviewRoutes from "./routes/product.review.routes.js";
 import couponRoutes from "./routes/coupon.routes.js"
 import addressRoutes from "./routes/address.routes.js"
@@ -45,6 +44,10 @@ import shippingZoneRoutes from "./routes/shipping.zone.routes.js";
 import courierRoutes from "./routes/courier.routes.js";
 import pickupStationRouter from "./routes/pickup-station.routes.js";
 import shipmentEventRoutes from "./routes/shipment.event.routes.js"
+import deliverySLARoutes from "./routes/delivery-sla.routes.js"
+import checkoutSessionRoutes from "./routes/checkout-session.routes.js"
+import fulfillmentRoutes from  "./routes/fulfillment.routes.js"
+import shippingQuoteRoutes from  "./routes/shipping-quote.routes.js"
 
 dotenv.config();
 
@@ -128,7 +131,6 @@ app.use("/api/warehouses", warehouseRoutes);
 app.use("/api/fitments", fitmentRoutes);
 app.use("/api/audit-logs", auditLogRoutes);
 app.use("/api/cart", cartRoutes);
-app.use("/api/payments", paymentRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/coupons", couponRoutes)
 app.use("/api/address", addressRoutes)
@@ -139,11 +141,16 @@ app.use("/api/shipping-rates", shippingRateRoutes);
 app.use("/api/shipping-zones", shippingZoneRoutes);
 app.use("/api/couriers", courierRoutes);
 app.use("/api/pickup-stations", pickupStationRouter);
-app.use("/shipment-events", shipmentEventRoutes);
+app.use("/api/shipment-events", shipmentEventRoutes);
+app.use("/api/delivery-slas", deliverySLARoutes);
+app.use("/api/checkout-sessions", checkoutSessionRoutes);
+app.use("/api/fulfillments", fulfillmentRoutes);
+app.use("/api/shipping-quotes", shippingQuoteRoutes);
+
 
 
 /* ================= WEBHOOKS ================= */
-app.use("/webhooks", webhookRoutes);
+app.post("/webhook/paystack", express.raw({ type: "application/json" }), paystackWebhook);
 
 /* ================= HEALTH ================= */
 app.get("/favicon.ico", (_, res) => res.status(204).end());
