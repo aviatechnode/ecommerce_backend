@@ -1,14 +1,9 @@
 import type { Request } from "express";
 
-export function getParam(
-  req: Request,
-  key: string
-): string {
+export function getParam(req: Request, key: string): string {
   const value = req.params[key];
 
-  if (!value || Array.isArray(value)) {
-    throw new Error(`Invalid param: ${key}`);
-  }
+  if (typeof value === "string") return value;
 
-  return value;
+  throw new Error(`Invalid or missing param: ${key}`);
 }

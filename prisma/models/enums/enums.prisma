@@ -1,0 +1,280 @@
+
+
+enum CouponLogAction {
+  APPLIED
+  REJECTED
+  EXPIRED
+  LIMIT_REACHED
+  USED
+}
+
+// ENUMS
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum ShippingRateType {
+  FLAT_RATE
+  WEIGHT_BASED
+  DISTANCE_BASED
+  PRICE_BASED
+  HYBRID
+}
+
+enum ShippingZoneType {
+  LOCAL
+  STATE
+  NATIONAL
+  INTERNATIONAL
+}
+
+enum ShipmentStatus {
+  PENDING
+  PROCESSING
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum DeliveryMethod {
+  DOOR_DELIVERY
+  PICKUP
+  EXPRESS
+  STANDARD
+}
+
+enum InventoryMovementType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  RETURN
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PROCESSING
+  PARTIALLY_SHIPPED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum PurchaseOrderStatus {
+  PENDING
+  ORDERED
+  RECEIVED
+  CANCELLED
+}
+
+enum NotificationType {
+  ORDER_UPDATE
+  PAYMENT_UPDATE
+  SHIPPING_UPDATE
+  PROMOTION
+  SYSTEM
+}
+
+enum StockReservationStatus {
+  RESERVED
+  CONFIRMED
+  RELEASED
+  EXPIRED
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum CouponType {
+  FIXED_AMOUNT
+  PERCENTAGE
+  FREE_SHIPPING
+}
+
+enum CouponScope {
+  ORDER_TOTAL
+  SHIPPING_ONLY
+  PRODUCT_ONLY
+}
+
+enum CouponStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  EXPIRED
+  ARCHIVED
+}
+
+enum CouponAppliesTo {
+  ALL_PRODUCTS
+  SPECIFIC_PRODUCTS
+  SPECIFIC_CATEGORIES
+  SPECIFIC_CUSTOMERS
+}
+
+enum CouponReservationStatus {
+  ACTIVE
+  CONSUMED
+  EXPIRED
+  RELEASED
+}
+
+enum CouponUsageStatus {
+  SUCCESS
+  REFUNDED
+  REVERSED
+}
+
+enum PaymentProvider {
+  PAYSTACK
+  FLUTTERWAVE
+  STRIPE
+  BANK_TRANSFER
+  CASH_ON_DELIVERY
+}
+
+enum ShippingMethod {
+  STANDARD
+  EXPRESS
+  SAME_DAY
+  PICKUP_STATION
+}
+
+// VEHICLE FITMENT
+enum FitmentLevel {
+  MAKE
+  MODEL
+  GENERATION
+  ENGINE
+  TRIM
+}
+
+enum ShipmentEventSource {
+  SYSTEM
+  COURIER
+  ADMIN
+  CUSTOMER
+}
+
+enum FulfillmentStatus {
+  PENDING
+  ALLOCATED
+  PICKING
+  PACKING
+  READY_FOR_DISPATCH
+  DISPATCHED
+  COMPLETED
+  FAILED
+}
+
+enum ReturnRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ITEM_SHIPPED_BACK
+  ITEM_RECEIVED
+  INSPECTING
+  REFUND_APPROVED
+  REFUNDED
+  CLOSED
+  CANCELLED
+}
+
+enum ReturnShipmentStatus {
+  PENDING
+  APPROVED
+  PICKED_UP
+  IN_TRANSIT
+  RECEIVED
+  INSPECTING
+  REFUNDED
+  REJECTED
+  CANCELLED
+}
+
+enum ReturnRequestItemStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SHIPPED_BACK
+  RECEIVED
+  INSPECTING
+  REFUND_APPROVED
+  REFUNDED
+  CLOSED
+}
+
+enum ShipmentType {
+  OUTBOUND
+  RETURN
+}
+
+
+// =========================================================
+// ENUMS
+// =========================================================
+
+enum ConversationStatus {
+  OPEN
+  PENDING_CUSTOMER
+  PENDING_SUPPORT
+  RESOLVED
+  CLOSED
+  ESCALATED
+}
+
+enum ConversationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ConversationChannel {
+  WEB
+  MOBILE
+  EMAIL
+  WHATSAPP
+  INSTAGRAM
+  FACEBOOK
+  SYSTEM
+}
+
+enum ConversationRole {
+  CUSTOMER
+  ADMIN
+  SUPPORT
+  SYSTEM
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+
+  ORDER_EVENT
+  PAYMENT_EVENT
+  SHIPMENT_EVENT
+  RETURN_EVENT
+
+  SYSTEM
+  INTERNAL_NOTE
+}
+
+enum MessageDeliveryStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}

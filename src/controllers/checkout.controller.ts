@@ -20,6 +20,7 @@ import { WarehouseService } from "../services/shipment/warehouse.service.js";
 import { CheckoutSessionService } from "../services/shipment/checkout-session.service.js";
 import { ShippingQuoteService } from "../services/shipment/shipping-quote.service.js";
 import { FulfillmentService } from "../services/shipment/fulfillment.service.js";
+import { DeliverySLAService } from "../services/shipment/delivery-sla.service.js"; // ✅ added
 
 function generateOrderNumber() {
   return `ORD-${Date.now()}`;
@@ -43,15 +44,31 @@ async function calculateTotalWeight(cartItems: any[]) {
   return totalWeight;
 }
 
+async function calculateTotalVolume(cartItems: any[]) {
+  let totalVolume = 0;
+  for (const item of cartItems) {
+    const length = item.variant?.length ?? 0;
+    const width = item.variant?.width ?? 0;
+    const height = item.variant?.height ?? 0;
+    totalVolume += length * width * height * item.quantity;
+  }
+  return totalVolume;
+}
+
+/* =========================================================
+   SHIPPING ESTIMATE – USES DELIVERY SLA SERVICE
+========================================================= */
 async function getShippingEstimate(params: {
   stateId: string;
   lgaId: string;
   shippingMethod: ShippingMethod;
   pickupStationId?: string | null;
   cartItems: any[];
+  subtotal: number;
 }) {
-  const { stateId, lgaId, shippingMethod, pickupStationId, cartItems } = params;
+  const { stateId, lgaId, shippingMethod, pickupStationId, cartItems, subtotal } = params;
 
+  // PICKUP STATION (no shipping fee)
   if (shippingMethod === ShippingMethod.PICKUP_STATION) {
     if (!pickupStationId) throw new Error("pickupStationId is required");
     const station = await prisma.pickupStation.findFirst({
@@ -68,9 +85,12 @@ async function getShippingEstimate(params: {
       shippingRate: null,
       zone: null,
       weight: 0,
+      volumetricWeight: 0,
+      chargeableWeight: 0,
     };
   }
 
+  // 1. Find shipping zone
   const zoneLga = await prisma.shippingZoneLGA.findFirst({
     where: { lgaId },
     include: { zone: true },
@@ -82,40 +102,79 @@ async function getShippingEstimate(params: {
   const zone = zoneLga?.zone ?? zoneState?.zone;
   if (!zone) throw new Error("No shipping zone covers this location");
 
-  const activeCourier = await prisma.courier.findFirst({ where: { isActive: true } });
-  if (!activeCourier) throw new Error("No active courier available");
+  // 2. All active couriers
+  const couriers = await prisma.courier.findMany({ where: { isActive: true } });
+  if (!couriers.length) throw new Error("No active couriers available");
 
   const totalWeight = await calculateTotalWeight(cartItems);
-  const bestRate = await ShippingRateService.findBestRate({
-    courierId: activeCourier.id,
-    zoneId: zone.id,
-    weight: totalWeight,
-  });
-  if (!bestRate) throw new Error("No suitable shipping rate found");
+  const totalVolume = await calculateTotalVolume(cartItems);
 
-  let deliveryFee = new Prisma.Decimal(bestRate.baseFee);
-  if (bestRate.perKgFee && totalWeight > 0) {
-    deliveryFee = deliveryFee.add(new Prisma.Decimal(bestRate.perKgFee).mul(totalWeight));
-  }
-  if (bestRate.fixedFee) deliveryFee = deliveryFee.add(new Prisma.Decimal(bestRate.fixedFee));
+  // 3. Get rates for every courier using the service
+  const results = await Promise.all(
+    couriers.map(async (courier) => {
+      try {
+        const rateCalc = await ShippingRateService.calculateRate({
+          courierId: courier.id,
+          zoneId: zone.id,
+          actualWeight: totalWeight,
+          totalVolume,
+          subtotal,
+          isRemoteArea: false, // TODO: implement remote area detection
+        });
+        return {
+          courier,
+          ...rateCalc,
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
 
+  const valid = results.filter((r) => r !== null);
+  if (!valid.length) throw new Error("No suitable shipping rate found");
+
+  // 4. Pick cheapest
+  valid.sort((a, b) => a.deliveryFee - b.deliveryFee);
+  const best = valid[0];
+  if (!best) throw new Error("No valid shipping rate found after sorting"); // ✅ safety guard
+
+  // 5. Estimate delivery days using DeliverySLAService
   let estimatedDays = 3;
-  const sla = await prisma.deliverySLA.findMany({ where: { courierId: activeCourier.id } });
-  const matchingSla = sla.find(s => s.zoneId === zone.id);
-  if (matchingSla) estimatedDays = matchingSla.minDays;
+  try {
+    const slas = await DeliverySLAService.findByCourier(best.courier.id);
+    const matchingSla = slas.find(
+      (sla) => sla.zoneId === zone.id && sla.shippingMethod === shippingMethod
+    );
+    if (matchingSla) {
+      estimatedDays = Math.ceil((matchingSla.minDays + matchingSla.maxDays) / 2);
+    } else {
+      const fallbackSla = slas.find((sla) => sla.shippingMethod === shippingMethod);
+      if (fallbackSla) {
+        estimatedDays = Math.ceil((fallbackSla.minDays + fallbackSla.maxDays) / 2);
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to fetch SLA, using default 3 days", error);
+  }
 
   return {
     shippingMethod,
-    deliveryFee: deliveryFee.toNumber(),
+    deliveryFee: best.deliveryFee,
     estimatedDays,
-    courier: activeCourier,
+    courier: best.courier,
     pickupStation: null,
-    shippingRate: bestRate,
+    shippingRate: best.shippingRate,
     zone,
     weight: totalWeight,
+    volumetricWeight: best.volumetricWeight,
+    chargeableWeight: best.chargeableWeight,
   };
 }
 
+/* =========================================================
+   CHECKOUT CONTROLLER (unchanged apart from using the fixed estimate)
+========================================================= */
 export const checkout = async (req: Request, res: Response) => {
   try {
     if (!req.user) {
@@ -229,27 +288,24 @@ export const checkout = async (req: Request, res: Response) => {
       expiresAt: sessionExpiresAt,
     });
 
-    // 4. Generate a shipping quote for the selected method
+    // 4. Get shipping estimate using the fixed function
     const shippingEstimate = await getShippingEstimate({
       stateId: resolvedAddress.stateId,
       lgaId: resolvedAddress.lgaId,
       shippingMethod,
       pickupStationId: pickupStationId ?? null,
       cartItems: cart.items,
+      subtotal: subtotal.toNumber(),
     });
-
-    const weightValue = shippingEstimate.weight ?? 0;
-    const volumetricWeightValue = weightValue;
-    const chargeableWeightValue = weightValue;
 
     const shippingQuote = await ShippingQuoteService.create({
       checkoutSessionId: session.id,
       courierName: shippingEstimate.courier.name,
       shippingMethod: shippingEstimate.shippingMethod,
       zoneName: shippingEstimate.zone?.name ?? "Unknown",
-      weight: weightValue,
-      volumetricWeight: volumetricWeightValue,
-      chargeableWeight: chargeableWeightValue,
+      weight: shippingEstimate.weight,
+      volumetricWeight: shippingEstimate.volumetricWeight,
+      chargeableWeight: shippingEstimate.chargeableWeight,
       baseFee: shippingEstimate.deliveryFee,
       surcharges: 0,
       totalFee: shippingEstimate.deliveryFee,
@@ -274,7 +330,6 @@ export const checkout = async (req: Request, res: Response) => {
         return { isDuplicate: true as const, response: existingKey.response };
       }
 
-      // Build order items
       const orderItemsData: Prisma.OrderItemCreateWithoutOrderInput[] = [];
       for (const item of cart.items) {
         const variant = item.variant!;
@@ -318,10 +373,9 @@ export const checkout = async (req: Request, res: Response) => {
           },
           events: { create: { type: "ORDER_CREATED", message: "Order created" } },
         },
-        include: { items: true }, // ✅ include items so we have their IDs
+        include: { items: true },
       });
 
-      // Stock reservation with warehouse selection
       const stockItems = cart.items.map(item => ({
         variantId: item.variantId,
         quantity: item.quantity,
@@ -351,15 +405,13 @@ export const checkout = async (req: Request, res: Response) => {
         });
       }
 
-      // Fulfillment & shipment creation
-      let finalDeliveryFee = new Prisma.Decimal(shippingEstimate.deliveryFee);
-      let shipment = null;
-
-      // Prepare fulfillment items from the order items
       const fulfillmentItems = order.items.map(orderItem => ({
         orderItemId: orderItem.id,
         quantity: orderItem.quantity,
       }));
+
+      let finalDeliveryFee = new Prisma.Decimal(shippingEstimate.deliveryFee);
+      let shipment = null;
 
       if (shippingMethod === ShippingMethod.PICKUP_STATION) {
         if (!pickupStationId) throw new Error("pickupStationId required");
@@ -370,7 +422,6 @@ export const checkout = async (req: Request, res: Response) => {
         if (!station) throw new Error("Invalid pickup station");
         finalDeliveryFee = new Prisma.Decimal(0);
 
-        // ✅ Use FulfillmentService to create fulfillment (and its items)
         const fulfillment = await FulfillmentService.create({
           orderId: order.id,
           warehouseId: warehouse.id,
@@ -387,17 +438,12 @@ export const checkout = async (req: Request, res: Response) => {
             status: ShipmentStatus.PENDING,
             shippingMethod,
             deliveryFee: 0,
-            weight: await calculateTotalWeight(cart.items),
+            weight: shippingEstimate.weight,
             orderId: order.id,
             pickupStationId: station.id,
           },
         });
       } else {
-        const activeCourier = shippingEstimate.courier;
-        const totalWeight = shippingEstimate.weight;
-        const bestRate = shippingEstimate.shippingRate;
-
-        // ✅ Use FulfillmentService to create fulfillment (and its items)
         const fulfillment = await FulfillmentService.create({
           orderId: order.id,
           warehouseId: warehouse.id,
@@ -409,14 +455,14 @@ export const checkout = async (req: Request, res: Response) => {
           data: {
             fulfillmentId: fulfillment.id,
             type: "OUTBOUND",
-            courierId: activeCourier.id,
-            shippingRateId: bestRate!.id,
+            courierId: shippingEstimate.courier.id,
+            shippingRateId: shippingEstimate.shippingRate!.id,
             trackingNumber: generateTrackingNumber(),
             status: ShipmentStatus.PENDING,
             shippingMethod,
             deliveryFee: finalDeliveryFee.toNumber(),
-            weight: totalWeight ?? null,
-            chargeableWeight: totalWeight ?? null,
+            weight: shippingEstimate.weight,
+            chargeableWeight: shippingEstimate.chargeableWeight,
             orderId: order.id,
           },
         });
@@ -434,7 +480,6 @@ export const checkout = async (req: Request, res: Response) => {
         },
       });
 
-      // Payment initialization
       const paymentInit = await PaymentService.initializePayment({
         orderId: order.id,
         email: req.user.email,
@@ -451,8 +496,6 @@ export const checkout = async (req: Request, res: Response) => {
       });
 
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-
-      // Mark session as completed
       await CheckoutSessionService.complete(session.id);
 
       return {

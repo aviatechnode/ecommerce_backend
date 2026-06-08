@@ -4,12 +4,6 @@ import type {
   NextFunction,
 } from "express";
 
-import { prisma } from "../lib/prismadb.js";
-
-import {
-  isValidCsrf,
-} from "../utils/csrf.js";
-
 export const csrfMiddleware = async (
   req: Request,
   res: Response,
@@ -22,65 +16,26 @@ export const csrfMiddleware = async (
     "DELETE",
   ];
 
-  if (
-    !unsafeMethods.includes(req.method)
-  ) {
+  if (!unsafeMethods.includes(req.method)) {
     return next();
   }
 
-  const headerToken =
-    req.headers[
-      "x-csrf-token"
-    ] as string | undefined;
-
-  const refreshToken =
-    req.cookies?.refreshToken as
-      | string
-      | undefined;
-
+  const headerToken = req.headers["x-csrf-token"] as string | undefined;
   if (!headerToken) {
     res.status(403).json({
       message: "Missing CSRF token",
     });
-
     return;
   }
+  const isValidFormat =
+    typeof headerToken === "string" &&
+    headerToken.length >= 32;
 
-  if (!refreshToken) {
+  if (!isValidFormat) {
     res.status(403).json({
-      message: "No session",
+      message: "Invalid CSRF token format",
     });
-
     return;
   }
-
-  const session =
-    await prisma.refreshToken.findUnique({
-      where: {
-        token: refreshToken,
-      },
-    });
-
-  if (!session) {
-    res.status(403).json({
-      message: "Invalid session",
-    });
-
-    return;
-  }
-
-  const valid = isValidCsrf(
-    headerToken,
-    session.csrfHash
-  );
-
-  if (!valid) {
-    res.status(403).json({
-      message: "Invalid CSRF token",
-    });
-
-    return;
-  }
-
-  next();
+  return next();
 };

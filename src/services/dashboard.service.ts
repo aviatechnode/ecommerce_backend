@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prismadb.js";
+import { ConversationStatus } from "@prisma/client";
 
 const startOfToday = () => {
   const d = new Date();
@@ -15,6 +16,8 @@ export const getDashboardStats = async () => {
     totalUsers,
     totalOrders,
     totalProducts,
+    totalConversations,
+    openConversations,
     revenueAgg,
     todayUsers,
     todayOrders,
@@ -24,11 +27,33 @@ export const getDashboardStats = async () => {
     unreadMessages,
     unreadNotifications,
   ] = await Promise.all([
+    // =========================================================
+    // TOTAL COUNTS
+    // =========================================================
+
     prisma.user.count(),
 
     prisma.order.count(),
 
     prisma.product.count(),
+
+    prisma.conversation.count(),
+
+    prisma.conversation.count({
+      where: {
+        status: {
+          in: [
+            ConversationStatus.OPEN,
+            ConversationStatus.PENDING_CUSTOMER,
+            ConversationStatus.PENDING_SUPPORT
+          ],
+        },
+      },
+    }),
+
+    // =========================================================
+    // REVENUE
+    // =========================================================
 
     prisma.order.aggregate({
       _sum: {
@@ -39,6 +64,10 @@ export const getDashboardStats = async () => {
         paymentStatus: "PAID",
       },
     }),
+
+    // =========================================================
+    // TODAY STATS
+    // =========================================================
 
     prisma.user.count({
       where: {
@@ -70,6 +99,10 @@ export const getDashboardStats = async () => {
       },
     }),
 
+    // =========================================================
+    // OPERATIONS
+    // =========================================================
+
     prisma.order.count({
       where: {
         status: "PENDING_PAYMENT",
@@ -78,11 +111,34 @@ export const getDashboardStats = async () => {
 
     prisma.cart.count(),
 
+    // =========================================================
+    // UNREAD MESSAGES
+    // =========================================================
+    // Since Message no longer has `isRead`,
+    // unread = messages without readAt
+    // or delivery not read
+
     prisma.message.count({
       where: {
-        isRead: false,
+        deletedAt: null,
+
+        OR: [
+          {
+            readAt: null,
+          },
+
+          {
+            deliveryStatus: {
+              not: "READ",
+            },
+          },
+        ],
       },
     }),
+
+    // =========================================================
+    // NOTIFICATIONS
+    // =========================================================
 
     prisma.notification.count({
       where: {
@@ -90,6 +146,10 @@ export const getDashboardStats = async () => {
       },
     }),
   ]);
+
+  // =========================================================
+  // LOW STOCK
+  // =========================================================
 
   const lowStockResult = await prisma.$queryRaw<
     { count: number }[]
@@ -111,6 +171,8 @@ export const getDashboardStats = async () => {
 
       products: totalProducts,
 
+      conversations: totalConversations,
+
       revenue:
         revenueAgg._sum.totalAmount?.toNumber() || 0,
     },
@@ -131,6 +193,8 @@ export const getDashboardStats = async () => {
       lowStockProducts,
 
       activeCarts,
+
+      openConversations,
     },
 
     engagement: {
@@ -231,3 +295,70 @@ export const getDashboardChartWithToday =
 
     return chart;
   };
+
+// =========================================================
+// OPTIONAL: CONVERSATION ANALYTICS
+// =========================================================
+
+export const getConversationStats = async () => {
+  const [
+    totalConversations,
+    openConversations,
+    resolvedConversations,
+    highPriorityConversations,
+    unreadConversationParticipants,
+    messagesToday,
+  ] = await Promise.all([
+    prisma.conversation.count(),
+
+    prisma.conversation.count({
+      where: {
+        status: "OPEN",
+      },
+    }),
+
+    prisma.conversation.count({
+      where: {
+        status: "RESOLVED",
+      },
+    }),
+
+    prisma.conversation.count({
+      where: {
+        priority: "HIGH",
+      },
+    }),
+
+    prisma.conversationParticipant.count({
+      where: {
+        unreadCount: {
+          gt: 0,
+        },
+      },
+    }),
+
+    prisma.message.count({
+      where: {
+        createdAt: {
+          gte: startOfToday(),
+        },
+
+        deletedAt: null,
+      },
+    }),
+  ]);
+
+  return {
+    totalConversations,
+
+    openConversations,
+
+    resolvedConversations,
+
+    highPriorityConversations,
+
+    unreadConversationParticipants,
+
+    messagesToday,
+  };
+};

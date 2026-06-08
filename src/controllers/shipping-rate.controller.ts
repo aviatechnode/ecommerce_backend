@@ -1,293 +1,228 @@
-import type { Request, Response } from "express";
+import type { Request, Response } from 'express'
+import { ShippingRateService } from '../services/shipping-rate.service.js'
+import { DeliveryMethod } from '@prisma/client'
 
-import { ShippingRateService } from "../services/shipment/shipping-rate.service.js";
+const shippingRateService = new ShippingRateService()
+
+// ==============================
+// SAFE TYPE HELPERS
+// ==============================
+const toString = (v: unknown): string | undefined => {
+  if (Array.isArray(v)) return v[0]
+  if (typeof v === 'string') return v
+  return undefined
+}
+
+const toNumber = (v: unknown): number | undefined => {
+  const s = toString(v)
+  if (!s) return undefined
+  const n = Number(s)
+  return Number.isNaN(n) ? undefined : n
+}
 
 export class ShippingRateController {
   /**
+   * GET ALL RATES FOR A ZONE
+   */
+  async getZoneRates(req: Request, res: Response) {
+    try {
+      const zoneId = toString(req.params.zoneId)
+
+      if (!zoneId) {
+        return res.status(400).json({
+          success: false,
+          message: 'zoneId is required'
+        })
+      }
+
+      const rates = await shippingRateService.getZoneRates(zoneId)
+
+      return res.status(200).json({
+        success: true,
+        data: rates
+      })
+    } catch (error: any) {
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to fetch shipping rates'
+      })
+    }
+  }
+
+  /**
+   * CALCULATE BEST SHIPPING RATE
+   */
+  async getBestRate(req: Request, res: Response) {
+    try {
+      const zoneId = toString(req.body.zoneId)
+
+      if (!zoneId) {
+        return res.status(400).json({
+          success: false,
+          message: 'zoneId is required'
+        })
+      }
+
+      const deliveryMethod = toString(req.body.deliveryMethod)
+      const weight = toNumber(req.body.weight)
+      const distanceKm = toNumber(req.body.distanceKm)
+      const orderValue = toNumber(req.body.orderValue)
+
+      // ✅ build payload safely (no undefined props passed incorrectly)
+      const payload: any = { zoneId }
+
+      if (deliveryMethod) {
+        payload.deliveryMethod = deliveryMethod as DeliveryMethod
+      }
+
+      if (weight !== undefined) {
+        payload.weight = weight
+      }
+
+      if (distanceKm !== undefined) {
+        payload.distanceKm = distanceKm
+      }
+
+      if (orderValue !== undefined) {
+        payload.orderValue = orderValue
+      }
+
+      const result = await shippingRateService.getBestRate(payload)
+
+      return res.status(200).json({
+        success: true,
+        data: result
+      })
+    } catch (error: any) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Failed to calculate shipping rate'
+      })
+    }
+  }
+
+  /**
    * CREATE SHIPPING RATE
    */
-  static async create(
-    req: Request,
-    res: Response
-  ) {
+  async createRate(req: Request, res: Response) {
     try {
-      const shippingRate =
-        await ShippingRateService.createRate(
-          req.body
-        );
+      const {
+        zoneId,
+        name,
+        deliveryMethod,
+        baseFee,
+        currency,
+        minWeight,
+        maxWeight,
+        weightFee,
+        minDistanceKm,
+        maxDistanceKm,
+        distanceFeeKm,
+        minOrderValue,
+        maxOrderValue,
+        estimatedDaysMin,
+        estimatedDaysMax,
+        priority
+      } = req.body
+
+      if (!zoneId || !name || !deliveryMethod || !baseFee) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing required fields'
+        })
+      }
+
+      const rate = await shippingRateService.createRate({
+        zoneId,
+        name,
+        deliveryMethod: deliveryMethod as DeliveryMethod,
+        baseFee: Number(baseFee),
+        currency,
+
+        minWeight,
+        maxWeight,
+        weightFee,
+
+        minDistanceKm,
+        maxDistanceKm,
+        distanceFeeKm,
+
+        minOrderValue,
+        maxOrderValue,
+
+        estimatedDaysMin,
+        estimatedDaysMax,
+
+        priority
+      })
 
       return res.status(201).json({
         success: true,
-        message:
-          "Shipping rate created successfully",
-        data: shippingRate,
-      });
+        data: rate
+      })
     } catch (error: any) {
       return res.status(400).json({
         success: false,
-        message:
-          error.message ??
-          "Failed to create shipping rate",
-      });
+        message: error.message || 'Failed to create shipping rate'
+      })
     }
   }
 
   /**
-   * GET ALL SHIPPING RATES
+   * TOGGLE RATE ACTIVE STATUS
    */
-  static async findAll(
-    _req: Request,
-    res: Response
-  ) {
+  async toggleRate(req: Request, res: Response) {
     try {
-      const shippingRates =
-        await ShippingRateService.getAllRates();
+      const id = toString(req.params.id)
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'id is required'
+        })
+      }
+
+      const isActive = Boolean(req.body.isActive)
+
+      const updated = await shippingRateService.toggleRate(id, isActive)
 
       return res.status(200).json({
         success: true,
-        data: shippingRates,
-      });
+        data: updated
+      })
     } catch (error: any) {
       return res.status(400).json({
         success: false,
-        message:
-          error.message ??
-          "Failed to fetch shipping rates",
-      });
+        message: error.message || 'Failed to update rate status'
+      })
     }
   }
 
   /**
-   * GET SHIPPING RATE BY ID
+   * DELETE RATE
    */
-  static async findById(
-    req: Request,
-    res: Response
-  ) {
+  async deleteRate(req: Request, res: Response) {
     try {
-      const rateId =
-        typeof req.params.id === "string"
-          ? req.params.id
-          : null;
+      const id = toString(req.params.id)
 
-      if (!rateId) {
+      if (!id) {
         return res.status(400).json({
           success: false,
-          message:
-            "Shipping rate ID is required",
-        });
+          message: 'id is required'
+        })
       }
 
-      const shippingRate =
-        await ShippingRateService.getRateById(
-          rateId
-        );
+      await shippingRateService.deleteRate(id)
 
       return res.status(200).json({
         success: true,
-        data: shippingRate,
-      });
-    } catch (error: any) {
-      return res.status(404).json({
-        success: false,
-        message:
-          error.message ??
-          "Shipping rate not found",
-      });
-    }
-  }
-
-  /**
-   * UPDATE SHIPPING RATE
-   */
-  static async update(
-    req: Request,
-    res: Response
-  ) {
-    try {
-      const rateId =
-        typeof req.params.id === "string"
-          ? req.params.id
-          : null;
-
-      if (!rateId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Shipping rate ID is required",
-        });
-      }
-
-      const shippingRate =
-        await ShippingRateService.updateRate(
-          rateId,
-          req.body
-        );
-
-      return res.status(200).json({
-        success: true,
-        message:
-          "Shipping rate updated successfully",
-        data: shippingRate,
-      });
+        message: 'Shipping rate deleted successfully'
+      })
     } catch (error: any) {
       return res.status(400).json({
         success: false,
-        message:
-          error.message ??
-          "Failed to update shipping rate",
-      });
-    }
-  }
-
-  /**
-   * TOGGLE SHIPPING RATE STATUS
-   */
-  static async toggleActive(
-    req: Request,
-    res: Response
-  ) {
-    try {
-      const rateId =
-        typeof req.params.id === "string"
-          ? req.params.id
-          : null;
-
-      if (!rateId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Shipping rate ID is required",
-        });
-      }
-
-      const shippingRate =
-        await ShippingRateService.toggleRateStatus(
-          rateId
-        );
-
-      return res.status(200).json({
-        success: true,
-        message:
-          "Shipping rate status updated successfully",
-        data: shippingRate,
-      });
-    } catch (error: any) {
-      return res.status(400).json({
-        success: false,
-        message:
-          error.message ??
-          "Failed to toggle shipping rate status",
-      });
-    }
-  }
-
-  /**
-   * DELETE SHIPPING RATE
-   */
-  static async delete(
-    req: Request,
-    res: Response
-  ) {
-    try {
-      const rateId =
-        typeof req.params.id === "string"
-          ? req.params.id
-          : null;
-
-      if (!rateId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Shipping rate ID is required",
-        });
-      }
-
-      await ShippingRateService.deleteRate(
-        rateId
-      );
-
-      return res.status(200).json({
-        success: true,
-        message:
-          "Shipping rate deleted successfully",
-      });
-    } catch (error: any) {
-      return res.status(400).json({
-        success: false,
-        message:
-          error.message ??
-          "Failed to delete shipping rate",
-      });
-    }
-  }
-
-  /**
-   * FIND BEST SHIPPING RATE
-   */
-  static async findBestRate(
-    req: Request,
-    res: Response
-  ) {
-    try {
-      if (
-        typeof req.body.courierId !==
-        "string"
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Courier ID is required",
-        });
-      }
-
-      if (
-        typeof req.body.zoneId !==
-        "string"
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Zone ID is required",
-        });
-      }
-
-      const weight = Number(
-        req.body.weight
-      );
-
-      if (
-        Number.isNaN(weight) ||
-        weight <= 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Weight must be a valid number greater than 0",
-        });
-      }
-
-      const rate =
-        await ShippingRateService.findBestRate(
-          {
-            courierId:
-              req.body.courierId,
-            zoneId: req.body.zoneId,
-            weight,
-          }
-        );
-
-      return res.status(200).json({
-        success: true,
-        data: rate,
-      });
-    } catch (error: any) {
-      return res.status(400).json({
-        success: false,
-        message:
-          error.message ??
-          "Failed to find best shipping rate",
-      });
+        message: error.message || 'Failed to delete shipping rate'
+      })
     }
   }
 }

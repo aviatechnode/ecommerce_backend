@@ -1,0 +1,12 @@
+//////////////////////////////////////////////////////////
+// ANALYTICS MODULE
+//////////////////////////////////////////////////////////
+
+model DashboardSnapshot {
+  id           String   @id @default(uuid())
+  date         DateTime @unique
+  totalRevenue Decimal  @db.Decimal(12, 2)
+  totalOrders  Int
+  totalUsers   Int
+  createdAt    DateTime @default(now())
+}

@@ -5,198 +5,281 @@ import bcrypt from "bcrypt";
    CONFIG
 ========================================================= */
 
-const DEFAULT_SUPER_ADMIN_EMAIL = process.env.DEFAULT_SUPER_ADMIN_EMAIL!;
-const DEFAULT_SUPER_ADMIN_PASSWORD = process.env.DEFAULT_SUPER_ADMIN_PASSWORD!;
+const DEFAULT_SUPER_ADMIN_EMAIL =
+  process.env.DEFAULT_SUPER_ADMIN_EMAIL!;
+const DEFAULT_SUPER_ADMIN_PASSWORD =
+  process.env.DEFAULT_SUPER_ADMIN_PASSWORD!;
 const SALT_ROUNDS = 10;
 
 /* =========================================================
    PERMISSION MATRIX
 ========================================================= */
 
-const permissionMatrix: Record<string, readonly string[]> = {
-  user: ["create", "read", "update", "delete"],
-  role: ["create", "read", "update", "delete"],
+const permissionMatrix: Record<string, readonly string[]> =
+  {
+    user: ["create", "read", "update", "delete"],
+    role: ["create", "read", "update", "delete"],
 
-  product: ["create", "read", "update", "delete"],
-  category: ["create", "read", "update", "delete"],
-  brand: ["create", "read", "update", "delete"],
+    product: ["create", "read", "update", "delete"],
+    category: ["create", "read", "update", "delete"],
+    brand: ["create", "read", "update", "delete"],
 
-  review: ["create", "read", "update", "delete"], 
+    review: ["create", "read", "update", "delete"],
 
-  order: ["create", "read", "update", "delete"],
-  payment: ["read", "update"],
-  shipment: ["create", "read","update","delete",],
-  // 🔥 SHIPMENT TRACKING + EVENTS
-  "shipment:event": ["create", "read", "update", "delete"],
-  "shipment:tracking": ["read"],
+    order: ["create", "read", "update", "delete"],
+    payment: ["read", "update"],
+    shipment: [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
 
-  // 🔥 LOGISTICS
-  courier: ["create", "read", "update", "delete"],
-  shipping_zone: ["create", "read", "update", "delete"],
-  shipping_rate: ["create", "read", "update", "delete"],
-  pickup_station: ["create", "read", "update", "delete"],
+    "shipment:event": [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
+    "shipment:tracking": ["read"],
 
-  inventory: ["read", "update"],
-  warehouse: ["create", "read", "update", "delete"],
-  feedback: ["create", "read", "update", "delete"],
+    courier: [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
+    shipping_zone: [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
+    shipping_rate: [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
+    pickup_station: [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
 
-  coupon: ["create", "read", "update", "delete"],
+    inventory: ["read", "update"],
+    warehouse: [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
+    feedback: [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
 
-  wishlist: ["create", "read", "delete"],
-  conversation: ["create", "read", "update", "delete"],
-  message: ["create", "read", "update", "delete"],
-  fitment: ["create", "read", "update", "delete"],
+    coupon: [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
 
-  address: ["create", "read", "update", "delete"],
+    wishlist: ["create", "read", "delete"],
 
-  audit: ["read"],
-};
+    conversation: [
+      "create",
+      "read",
+      "update",
+      "delete",
+      "assign",
+      "close",
+    ],
+
+    message: [
+      "create",
+      "read",
+      "update",
+      "delete",
+      "read_all",
+      "delete_any",
+    ],
+
+    chat: [
+      "read",
+      "send",
+      "moderate",
+      "pin",
+      "delete_any",
+    ],
+
+    fitment: [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
+
+    address: [
+      "create",
+      "read",
+      "update",
+      "delete",
+    ],
+
+    audit: ["read"],
+  };
 
 /* =========================================================
    PERMISSION GROUPS
 ========================================================= */
 
-const permissionGroups: Record<string, readonly string[]> = {
-  USER_MANAGEMENT: [
-    "user:create",
-    "user:read",
-    "user:update",
-    "user:delete",
-  ],
+const permissionGroups: Record<string, readonly string[]> =
+  {
+    USER_MANAGEMENT: [
+      "user:create",
+      "user:read",
+      "user:update",
+      "user:delete",
+    ],
 
-  PRODUCT_MANAGEMENT: [
-    "product:create",
-    "product:read",
-    "product:update",
-    "product:delete",
+    PRODUCT_MANAGEMENT: [
+      "product:create",
+      "product:read",
+      "product:update",
+      "product:delete",
 
-    "category:create",
-    "category:read",
-    "category:update",
-    "category:delete",
+      "category:create",
+      "category:read",
+      "category:update",
+      "category:delete",
 
-    "brand:create",
-    "brand:read",
-    "brand:update",
-    "brand:delete",
+      "brand:create",
+      "brand:read",
+      "brand:update",
+      "brand:delete",
 
-    // 🔥 FIX: FULL REVIEW ACCESS FOR ADMIN
-    "review:create",
-    "review:read",
-    "review:update",
-    "review:delete",
+      "review:create",
+      "review:read",
+      "review:update",
+      "review:delete",
 
-    // FEED BACK IMPLEMENTATION
-    "feedback:create",
-    "feedback:read",
-    "feedback:update",
-    "feedback:delete",
-  ],
+      "feedback:create",
+      "feedback:read",
+      "feedback:update",
+      "feedback:delete",
+    ],
 
-  LOGISTICS_MANAGEMENT: [
-  // Shipments
-  "shipment:create",
-  "shipment:read",
-  "shipment:update",
-  "shipment:delete",
+    LOGISTICS_MANAGEMENT: [
+      "shipment:create",
+      "shipment:read",
+      "shipment:update",
+      "shipment:delete",
 
-  // Tracking
-  "shipment:tracking:read",
+      "shipment:tracking:read",
 
-  // Shipment Events
-  "shipment:event:create",
-  "shipment:event:read",
-  "shipment:event:update",
-  "shipment:event:delete",
+      "shipment:event:create",
+      "shipment:event:read",
+      "shipment:event:update",
+      "shipment:event:delete",
 
-  // Couriers
-  "courier:create",
-  "courier:read",
-  "courier:update",
-  "courier:delete",
+      "courier:create",
+      "courier:read",
+      "courier:update",
+      "courier:delete",
 
-  // Shipping Zones
-  "shipping_zone:create",
-  "shipping_zone:read",
-  "shipping_zone:update",
-  "shipping_zone:delete",
+      "shipping_zone:create",
+      "shipping_zone:read",
+      "shipping_zone:update",
+      "shipping_zone:delete",
 
-  // Shipping Rates
-  "shipping_rate:create",
-  "shipping_rate:read",
-  "shipping_rate:update",
-  "shipping_rate:delete",
+      "shipping_rate:create",
+      "shipping_rate:read",
+      "shipping_rate:update",
+      "shipping_rate:delete",
 
-  // Pickup Stations
-  "pickup_station:create",
-  "pickup_station:read",
-  "pickup_station:update",
-  "pickup_station:delete",
-],
+      "pickup_station:create",
+      "pickup_station:read",
+      "pickup_station:update",
+      "pickup_station:delete",
+    ],
 
-  INVENTORY_MANAGEMENT: [
-    "inventory:read",
-    "inventory:update",
+    INVENTORY_MANAGEMENT: [
+      "inventory:read",
+      "inventory:update",
 
-    "warehouse:create",
-    "warehouse:read",
-    "warehouse:update",
-    "warehouse:delete",
-  ],
+      "warehouse:create",
+      "warehouse:read",
+      "warehouse:update",
+      "warehouse:delete",
+    ],
 
-  ORDER_MANAGEMENT: [
-    "order:create",
-    "order:read",
-    "order:update",
-    "order:delete",
+    ORDER_MANAGEMENT: [
+      "order:create",
+      "order:read",
+      "order:update",
+      "order:delete",
 
-    "shipment:read",
-    "shipment:update",
-    "shipment:create",
-    "shipment:delete",
-  ],
+      "shipment:read",
+      "shipment:update",
+      "shipment:create",
+      "shipment:delete",
+    ],
 
-  PAYMENT_MANAGEMENT: [
-    "payment:read",
-    "payment:update",
-  ],
+    PAYMENT_MANAGEMENT: [
+      "payment:read",
+      "payment:update",
+    ],
 
-  MARKETING_MANAGEMENT: [
-    "coupon:create",
-    "coupon:read",
-    "coupon:update",
-    "coupon:delete",
-  ],
+    MARKETING_MANAGEMENT: [
+      "coupon:create",
+      "coupon:read",
+      "coupon:update",
+      "coupon:delete",
+    ],
 
-  ROLE_MANAGEMENT: [
-    "role:create",
-    "role:read",
-    "role:update",
-    "role:delete",
-  ],
+    ROLE_MANAGEMENT: [
+      "role:create",
+      "role:read",
+      "role:update",
+      "role:delete",
+    ],
 
-  CHAT_MANAGEMENT: [
-    "conversation:create",
-    "conversation:read",
-    "conversation:update",
-    "conversation:delete",
-    "message:create",
-    "message:read",
-    "message:update",
-    "message:delete",
-  ],
+    CHAT_MANAGEMENT: [
+      "conversation:create",
+      "conversation:read",
+      "conversation:update",
+      "conversation:delete",
+      "conversation:assign",
+      "conversation:close",
 
-  FITMENT_MANAGEMENT: [
-    "fitment:create",
-    "fitment:read",
-    "fitment:update",
-    "fitment:delete",
-  ],
+      "message:create",
+      "message:read",
+      "message:update",
+      "message:delete",
+      "message:read_all",
+      "message:delete_any",
 
-  SYSTEM_MANAGEMENT: [
-    "audit:read",
-  ],
-};
+      "chat:read",
+      "chat:send",
+      "chat:moderate",
+      "chat:pin",
+      "chat:delete_any",
+    ],
+
+    FITMENT_MANAGEMENT: [
+      "fitment:create",
+      "fitment:read",
+      "fitment:update",
+      "fitment:delete",
+    ],
+
+    SYSTEM_MANAGEMENT: ["audit:read"],
+  };
 
 /* =========================================================
    ROLE DEFINITIONS
@@ -236,19 +319,27 @@ const roleDefinitions: readonly RoleDef[] = [
     directPermissions: [
       "product:read",
       "category:read",
+
       "order:create",
       "order:read",
       "order:update",
+
       "wishlist:create",
       "wishlist:read",
       "wishlist:delete",
+
       "conversation:create",
-      "message:create",
       "conversation:read",
-      // feedback permissions
+
+      "message:create",
+      "message:read",
+
+      "chat:read",
+      "chat:send",
+
       "feedback:create",
       "feedback:read",
-      
+
       "review:create",
       "review:read",
 
@@ -267,150 +358,189 @@ const roleDefinitions: readonly RoleDef[] = [
 async function main() {
   console.log("🌱 RBAC Seeding Started...\n");
 
-  const createdPermissions = new Map<string, string>();
+  const createdPermissions = new Map<
+    string,
+    string
+  >();
 
-  /* ---------------- Permissions ---------------- */
-  for (const [resource, actions] of Object.entries(permissionMatrix)) {
+  for (const [resource, actions] of Object.entries(
+    permissionMatrix
+  )) {
     for (const action of actions) {
       const name = `${resource}:${action}`;
 
-      const permission = await prisma.permission.upsert({
-        where: { name },
-        update: {},
-        create: {
-          name,
-          description: `${action} ${resource}`,
-          resource,
-          action,
-        },
-      });
+      const permission =
+        await prisma.permission.upsert({
+          where: { name },
+          update: {},
+          create: {
+            name,
+            description: `${action} ${resource}`,
+            resource,
+            action,
+          },
+        });
 
-      createdPermissions.set(name, permission.id);
+      createdPermissions.set(
+        name,
+        permission.id
+      );
     }
   }
 
   console.log("✅ Permissions seeded");
 
-  /* ---------------- Groups ---------------- */
+  const createdGroups = new Map<
+    string,
+    string
+  >();
 
-  const createdGroups = new Map<string, string>();
-
-  for (const [groupName, perms] of Object.entries(permissionGroups)) {
-    const group = await prisma.permissionGroup.upsert({
-      where: { name: groupName },
-      update: {},
-      create: {
-        name: groupName,
-        description: `${groupName} permissions`,
-      },
-    });
+  for (const [
+    groupName,
+    perms,
+  ] of Object.entries(permissionGroups)) {
+    const group =
+      await prisma.permissionGroup.upsert({
+        where: { name: groupName },
+        update: {},
+        create: {
+          name: groupName,
+          description: `${groupName} permissions`,
+        },
+      });
 
     createdGroups.set(groupName, group.id);
 
     for (const perm of perms) {
-      const permissionId = createdPermissions.get(perm);
+      const permissionId =
+        createdPermissions.get(perm);
 
       if (!permissionId) {
-        throw new Error(`Missing permission in matrix: ${perm}`);
+        throw new Error(
+          `Missing permission: ${perm}`
+        );
       }
 
-      await prisma.permissionAssignment.upsert({
-        where: {
-          groupId_permissionId: {
+      await prisma.permissionAssignment.upsert(
+        {
+          where: {
+            groupId_permissionId: {
+              groupId: group.id,
+              permissionId,
+            },
+          },
+          update: {},
+          create: {
             groupId: group.id,
             permissionId,
           },
-        },
-        update: {},
-        create: {
-          groupId: group.id,
-          permissionId,
-        },
-      });
+        }
+      );
     }
   }
 
   console.log("✅ Permission groups seeded");
 
-  /* ---------------- Roles ---------------- */
-
-  const createdRoles = new Map<string, string>();
+  const createdRoles = new Map<
+    string,
+    string
+  >();
 
   for (const role of roleDefinitions) {
-    const created = await prisma.role.upsert({
-      where: { name: role.name },
-      update: {},
-      create: {
-        name: role.name,
-        description: role.description,
-        parentId: null,
-      },
-    });
+    const created =
+      await prisma.role.upsert({
+        where: { name: role.name },
+        update: {},
+        create: {
+          name: role.name,
+          description: role.description,
+          parentId: null,
+        },
+      });
 
     createdRoles.set(role.name, created.id);
   }
 
   console.log("✅ Roles seeded");
 
-  /* ---------------- Attach Groups ---------------- */
-
   for (const role of roleDefinitions) {
     if (!role.groups) continue;
 
-    const roleId = createdRoles.get(role.name)!;
+    const roleId = createdRoles.get(
+      role.name
+    )!;
 
     for (const groupName of role.groups) {
-      const groupId = createdGroups.get(groupName)!;
+      const groupId =
+        createdGroups.get(groupName)!;
 
-      await prisma.rolePermissionGroup.upsert({
-        where: {
-          roleId_groupId: { roleId, groupId },
-        },
-        update: {},
-        create: { roleId, groupId },
-      });
+      await prisma.rolePermissionGroup.upsert(
+        {
+          where: {
+            roleId_groupId: {
+              roleId,
+              groupId,
+            },
+          },
+          update: {},
+          create: {
+            roleId,
+            groupId,
+          },
+        }
+      );
     }
   }
 
   console.log("✅ Groups attached");
 
-  /* ---------------- Direct Permissions ---------------- */
-
   for (const role of roleDefinitions) {
     if (!role.directPermissions) continue;
 
-    const roleId = createdRoles.get(role.name)!;
+    const roleId = createdRoles.get(
+      role.name
+    )!;
 
     for (const perm of role.directPermissions) {
-      const permissionId = createdPermissions.get(perm);
+      const permissionId =
+        createdPermissions.get(perm);
 
       if (!permissionId) continue;
 
       await prisma.rolePermission.upsert({
         where: {
-          roleId_permissionId: { roleId, permissionId },
+          roleId_permissionId: {
+            roleId,
+            permissionId,
+          },
         },
         update: {},
-        create: { roleId, permissionId },
+        create: {
+          roleId,
+          permissionId,
+        },
       });
     }
   }
 
   console.log("✅ Direct permissions attached");
 
-  /* ---------------- Super Admin ---------------- */
+  const superAdminRoleId =
+    createdRoles.get("SUPER_ADMIN")!;
 
-  const superAdminRoleId = createdRoles.get("SUPER_ADMIN")!;
-
-  const existingSuperAdmin = await prisma.user.findUnique({
-    where: { email: DEFAULT_SUPER_ADMIN_EMAIL },
-  });
+  const existingSuperAdmin =
+    await prisma.user.findUnique({
+      where: {
+        email: DEFAULT_SUPER_ADMIN_EMAIL,
+      },
+    });
 
   if (!existingSuperAdmin) {
-    const hashedPassword = await bcrypt.hash(
-      DEFAULT_SUPER_ADMIN_PASSWORD,
-      SALT_ROUNDS
-    );
+    const hashedPassword =
+      await bcrypt.hash(
+        DEFAULT_SUPER_ADMIN_PASSWORD,
+        SALT_ROUNDS
+      );
 
     await prisma.user.create({
       data: {
@@ -422,10 +552,14 @@ async function main() {
       },
     });
 
-    console.log("✅ Default Super Admin created");
+    console.log(
+      "✅ Default Super Admin created"
+    );
   }
 
-  console.log("\n🎉 RBAC Seeding Completed Successfully!");
+  console.log(
+    "\n🎉 RBAC Seeding Completed Successfully!"
+  );
 }
 
 main()

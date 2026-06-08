@@ -1,0 +1,30 @@
+model State {
+  id                 String              @id @default(uuid())
+  name               String              @unique
+  latitude           Float?
+  longitude          Float?
+  lgas               LGA[]
+  warehouses         Warehouse[]
+  warehouseRoutes    WarehouseRoute[]
+  carts              Cart[]
+  addresses Address[]
+
+  shippingZones ShippingZone[]
+}
+
+model LGA {
+  id               String            @id @default(uuid())
+  name             String
+  latitude         Float?
+  longitude        Float?
+  stateId          String
+  state            State             @relation(fields: [stateId], references: [id], onDelete: Cascade)
+  warehouseRoutes  WarehouseRoute[]
+  carts            Cart[]
+
+  @@unique([stateId, name])
+  @@index([stateId])
+  addresses Address[]
+  shippingZones ShippingZone[]
+}
+

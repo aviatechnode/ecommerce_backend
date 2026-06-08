@@ -1,0 +1,89 @@
+// USER PROFILE
+model Address {
+  id     String @id @default(uuid())
+  userId String
+
+  name   String
+  phone  String
+
+  stateId String
+  lgaId   String
+  city    String
+
+  area        String?
+  street      String
+  landmark    String?
+  fullAddress String @db.Text
+
+  isDefault Boolean @default(false)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  state State @relation(fields: [stateId], references: [id])
+  lga   LGA   @relation(fields: [lgaId], references: [id])
+
+  @@index([userId])
+  @@index([stateId, lgaId])
+}
+
+model Wishlist {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  user  User           @relation(fields: [userId], references: [id])
+  items WishlistItem[]
+
+  createdAt DateTime @default(now())
+}
+
+model WishlistItem {
+  id         String @id @default(uuid())
+  wishlistId String
+  productId  String
+
+  wishlist Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@unique([wishlistId, productId])
+}
+
+// NOTIFICATIONS
+model Notification {
+  id         String           @id @default(uuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  title      String
+  message    String
+  isRead     Boolean          @default(false)
+  entityType String? // ORDER, PAYMENT, SHIPMENT, SYSTEM
+  entityId   String?
+  createdAt  DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@index([entityType, entityId])
+}
+
+model Feedback {
+  id               String           @id @default(uuid())
+  userName         String?
+  email            String
+  phoneNumber      String?
+  productName      String
+  productNumber    String?
+  usageDuration    String?
+  buyAgain         String?
+  buyingExperience Int              @default(0)
+  concern          String?
+  ratings          FeedbackRating[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+model FeedbackRating {
+  id         String   @id @default(uuid())
+  feedbackId String
+  criteria   String
+  score      Int
+  feedback   Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+}

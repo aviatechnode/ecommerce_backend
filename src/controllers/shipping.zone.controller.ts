@@ -1,323 +1,80 @@
-import type { Response } from "express";
-
-import type { TypedRequest } from "../types/express.js";
-
-import type {
-  ShippingZoneIdParamInput,
-} from "../schemas/shipment/shipment.zone.schema.js";
-
-import type {
-  ShippingZoneStateIdParamInput,
-} from "../schemas/shipment/shipment.zone.state.js";
-
-import type {
-  ShippingZoneLGAIdParamInput,
-} from "../schemas/shipment/shipment.zone.lga.schema.js";
-
-import { ShippingZoneService } from "../services/shipment/shipping-zone.service.js";
-
-import { ShippingZoneStateService } from "../services/shipment/shipping-zone-state.service.js";
-
-import { ShippingZoneLGAService } from "../services/shipment/shipping-zone-lga.service.js";
+import type { Request, Response } from "express";
+import { ShippingZoneService } from "../services/shipping-zones.service.js";
+import { getParam } from "../utils/getParam.js";
 
 export class ShippingZoneController {
-  /* =========================================================
-     SHIPPING ZONES
-  ========================================================= */
+  static async getAll(req: Request, res: Response) {
+    const zones = await ShippingZoneService.getAll();
 
-  static async createZone(
-    req: TypedRequest,
-    res: Response
-  ) {
-    const zone = await ShippingZoneService.create(
+    return res.status(200).json({
+      success: true,
+      data: zones,
+    });
+  }
+
+  static async getById(req: Request, res: Response) {
+    const id = getParam(req, "id");
+
+    const zone = await ShippingZoneService.getById(id);
+
+    if (!zone) {
+      return res.status(404).json({
+        success: false,
+        message: "Shipping zone not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: zone,
+    });
+  }
+
+  static async create(req: Request, res: Response) {
+    const zone = await ShippingZoneService.create(req.body);
+
+    return res.status(201).json({
+      success: true,
+      data: zone,
+    });
+  }
+
+  static async update(req: Request, res: Response) {
+    const id = getParam(req, "id");
+
+    const zone = await ShippingZoneService.update(
+      id,
       req.body
     );
 
-    return res.status(201).json(zone);
-  }
-
-  static async getAllZones(
-    _req: TypedRequest,
-    res: Response
-  ) {
-    const zones =
-      await ShippingZoneService.getAll();
-
-    return res.json(zones);
-  }
-
-  static async getZoneById(
-    req: TypedRequest<ShippingZoneIdParamInput>,
-    res: Response
-  ) {
-    const zone =
-      await ShippingZoneService.getById(
-        req.params.id
-      );
-
-    return res.json(zone);
-  }
-
-  static async updateZone(
-    req: TypedRequest<ShippingZoneIdParamInput>,
-    res: Response
-  ) {
-    const zone =
-      await ShippingZoneService.update(
-        req.params.id,
-        req.body
-      );
-
-    return res.json(zone);
-  }
-
-  static async toggleZoneStatus(
-    req: TypedRequest<ShippingZoneIdParamInput>,
-    res: Response
-  ) {
-    const zone =
-      await ShippingZoneService.toggleStatus(
-        req.params.id
-      );
-
-    return res.json(zone);
-  }
-
-  static async deleteZone(
-    req: TypedRequest<ShippingZoneIdParamInput>,
-    res: Response
-  ) {
-    await ShippingZoneService.delete(
-      req.params.id
-    );
-
-    return res.json({
-      message:
-        "Shipping zone deleted successfully",
+    return res.status(200).json({
+      success: true,
+      data: zone,
     });
   }
 
-  static async getActiveZones(
-    _req: TypedRequest,
-    res: Response
-  ) {
-    const zones =
-      await ShippingZoneService.getActiveZones();
+  static async delete(req: Request, res: Response) {
+    const id = getParam(req, "id");
 
-    return res.json(zones);
-  }
+    await ShippingZoneService.delete(id);
 
-  /* =========================================================
-     SHIPPING ZONE STATES
-  ========================================================= */
-
-  static async createStateMapping(
-    req: TypedRequest,
-    res: Response
-  ) {
-    const mapping =
-      await ShippingZoneStateService.createMapping(
-        req.body
-      );
-
-    return res.status(201).json(mapping);
-  }
-
-  static async getAllStateMappings(
-    _req: TypedRequest,
-    res: Response
-  ) {
-    const mappings =
-      await ShippingZoneStateService.getAllMappings();
-
-    return res.json(mappings);
-  }
-
-  static async getStateMappingById(
-    req: TypedRequest<ShippingZoneStateIdParamInput>,
-    res: Response
-  ) {
-    const mapping =
-      await ShippingZoneStateService.getMappingById(
-        req.params.id
-      );
-
-    return res.json(mapping);
-  }
-
-  static async updateStateMapping(
-    req: TypedRequest<ShippingZoneStateIdParamInput>,
-    res: Response
-  ) {
-    const mapping =
-      await ShippingZoneStateService.updateMapping(
-        req.params.id,
-        req.body
-      );
-
-    return res.json(mapping);
-  }
-
-  static async deleteStateMapping(
-    req: TypedRequest<ShippingZoneStateIdParamInput>,
-    res: Response
-  ) {
-    await ShippingZoneStateService.deleteMapping(
-      req.params.id
-    );
-
-    return res.json({
-      message:
-        "Shipping zone state mapping deleted successfully",
+    return res.status(200).json({
+      success: true,
+      message: "Shipping zone deleted",
     });
   }
 
-  static async bulkAssignStates(
-    req: TypedRequest,
-    res: Response
-  ) {
-    const result =
-      await ShippingZoneStateService.bulkAssignStates(
-        req.body
-      );
+  static async toggleStatus(req: Request, res: Response) {
+    const id = getParam(req, "id");
 
-    return res.status(201).json(result);
-  }
-
-  static async clearZoneStates(
-    req: TypedRequest<ShippingZoneIdParamInput>,
-    res: Response
-  ) {
-    const result =
-      await ShippingZoneStateService.clearZone(
-        req.params.id
-      );
-
-    return res.json(result);
-  }
-
-  static async getZonesByState(
-    req: TypedRequest,
-    res: Response
-  ) {
-    const zones =
-      await ShippingZoneStateService.getZonesByState(
-        req.params.stateId
-      );
-
-    return res.json(zones);
-  }
-
-  /* =========================================================
-     SHIPPING ZONE LGAS
-  ========================================================= */
-
-  static async createLGAMapping(
-    req: TypedRequest,
-    res: Response
-  ) {
-    const mapping =
-      await ShippingZoneLGAService.createMapping(
-        req.body
-      );
-
-    return res.status(201).json(mapping);
-  }
-
-  static async getAllLGAMappings(
-    _req: TypedRequest,
-    res: Response
-  ) {
-    const mappings =
-      await ShippingZoneLGAService.getAllMappings();
-
-    return res.json(mappings);
-  }
-
-  static async getLGAMappingById(
-    req: TypedRequest<ShippingZoneLGAIdParamInput>,
-    res: Response
-  ) {
-    const mapping =
-      await ShippingZoneLGAService.getMappingById(
-        req.params.id
-      );
-
-    return res.json(mapping);
-  }
-
-  static async updateLGAMapping(
-    req: TypedRequest<ShippingZoneLGAIdParamInput>,
-    res: Response
-  ) {
-    const mapping =
-      await ShippingZoneLGAService.updateMapping(
-        req.params.id,
-        req.body
-      );
-
-    return res.json(mapping);
-  }
-
-  static async deleteLGAMapping(
-    req: TypedRequest<ShippingZoneLGAIdParamInput>,
-    res: Response
-  ) {
-    await ShippingZoneLGAService.deleteMapping(
-      req.params.id
+    const zone = await ShippingZoneService.toggleStatus(
+      id,
+      req.body.isActive
     );
 
-    return res.json({
-      message:
-        "Shipping zone LGA mapping deleted successfully",
+    return res.status(200).json({
+      success: true,
+      data: zone,
     });
-  }
-
-  static async bulkAssignLGAs(
-    req: TypedRequest,
-    res: Response
-  ) {
-    const result =
-      await ShippingZoneLGAService.bulkAssignLGAs(
-        req.body
-      );
-
-    return res.status(201).json(result);
-  }
-
-  static async clearZoneLGAs(
-    req: TypedRequest<ShippingZoneIdParamInput>,
-    res: Response
-  ) {
-    const result =
-      await ShippingZoneLGAService.clearZone(
-        req.params.id
-      );
-
-    return res.json(result);
-  }
-
-  static async getLGAsByZone(
-    req: TypedRequest<ShippingZoneIdParamInput>,
-    res: Response
-  ) {
-    const lgas =
-      await ShippingZoneLGAService.getLGAsByZone(
-        req.params.id
-      );
-
-    return res.json(lgas);
-  }
-
-  static async getZonesByLGA(
-    req: TypedRequest,
-    res: Response
-  ) {
-    const zones =
-      await ShippingZoneLGAService.getZonesByLGA(
-        req.params.lgaId
-      );
-
-    return res.json(zones);
   }
 }

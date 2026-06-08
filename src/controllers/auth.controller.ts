@@ -13,7 +13,9 @@ import { prisma } from "../lib/prismadb.js";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.js";
 import { resolvePermissions } from "../utils/rbac.js";
 import { sendEmail } from "../utils/email.js";
-import { createCsrfPair, generateCsrfToken, hashCsrfToken } from "../utils/csrf.js";
+import {
+  generateCsrfToken,
+} from "../utils/csrf.js";
 
 // ================================================================
 // CONSTANTS
@@ -23,100 +25,249 @@ const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
 const RESET_TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour
 
 // ================================================================
+// HELPER
+// ================================================================
+
+const setRefreshCookie = (
+  res: Response,
+  refreshToken: string
+) => {
+  const isProd = process.env.NODE_ENV === "production";
+
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    path: "/",
+  });
+};
+
+const createSession = async (
+  req: Request,
+  userId: string
+) => {
+  const refreshToken = generateRefreshToken();
+
+  await prisma.refreshToken.create({
+    data: {
+      token: refreshToken,
+      userId,
+      userAgent: req.headers["user-agent"] ?? null,
+      ipAddress: req.ip ?? null,
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY),
+    },
+  });
+
+  const rawToken = generateCsrfToken();
+
+  return {
+    refreshToken,
+    csrfToken: rawToken,
+  };
+};
+
+// ================================================================
+// GOOGLE SUCCESS
+// ================================================================
+
+export const googleSuccess = async (
+  req: Request,
+  res: Response
+): Promise<Response | void> => {
+  try {
+    if (!req.user) {
+      return res
+        .status(401)
+        .json({
+          message:
+            "Google authentication failed",
+        });
+    }
+
+    const dbUser =
+      await prisma.user.findUnique({
+        where: {
+          id: req.user.id,
+        },
+        include: {
+          role: true,
+        },
+      });
+
+    if (!dbUser || !dbUser.role) {
+      return res
+        .status(404)
+        .json({
+          message: "User not found",
+        });
+    }
+
+    const permissions = Array.from(
+      await resolvePermissions(
+        dbUser.role.id
+      )
+    );
+
+    const accessToken =
+      generateAccessToken({
+        id: dbUser.id,
+        roleId: dbUser.role.id,
+        roleName: dbUser.role.name,
+        permissions,
+      });
+
+    const {
+      refreshToken,
+      csrfToken,
+    } = await createSession(
+      req,
+      dbUser.id
+    );
+
+    setRefreshCookie(
+      res,
+      refreshToken
+    );
+
+    return res.redirect(
+      `${process.env.CLIENT_URL}/oauth-success?accessToken=${encodeURIComponent(
+        accessToken
+      )}&csrfToken=${encodeURIComponent(
+        csrfToken
+      )}`
+    );
+  } catch (error) {
+    console.error(
+      "GOOGLE SUCCESS ERROR:",
+      error
+    );
+
+    return res
+      .status(500)
+      .json({
+        message: "Server Error",
+      });
+  }
+};
+
+// ================================================================
 // SIGNUP
 // ================================================================
 
-export const signup = async (req: Request, res: Response): Promise<Response> => {
+export const signup = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   try {
-    const parsed = signupSchema.safeParse(req.body);
+    const parsed =
+      signupSchema.safeParse(
+        req.body
+      );
+
     if (!parsed.success) {
-      return res.status(400).json({ errors: parsed.error.format() });
+      return res
+        .status(400)
+        .json({
+          errors:
+            parsed.error.format(),
+        });
     }
 
-    const { email, password, name } = parsed.data;
+    const {
+      email,
+      password,
+      name,
+    } = parsed.data;
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const existingUser =
+      await prisma.user.findUnique({
+        where: { email },
+      });
+
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
+      return res
+        .status(400)
+        .json({
+          message:
+            "User already exists",
+        });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword =
+      await bcrypt.hash(
+        password,
+        10
+      );
 
-    const role = await prisma.role.findUnique({
-      where: { name: "CUSTOMER" },
-    });
+    const role =
+      await prisma.role.findUnique({
+        where: {
+          name: "CUSTOMER",
+        },
+      });
 
     if (!role) {
-      return res.status(500).json({ message: "Default role not found" });
+      return res
+        .status(500)
+        .json({
+          message:
+            "Default role not found",
+        });
     }
 
-    const verificationToken = randomBytes(32).toString("hex");
+    const verificationToken =
+      randomBytes(32).toString(
+        "hex"
+      );
 
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        name,
-        roleId: role.id,
-        verificationToken,
-      },
-    });
+    const user =
+      await prisma.user.create({
+        data: {
+          email,
+          password:
+            hashedPassword,
+          name,
+          roleId: role.id,
+
+          emailVerified:
+            false,
+
+          verificationToken,
+        },
+      });
 
     await sendEmail(
       user.email,
       "Verify Your Email",
-      `<a href="${process.env.CLIENT_URL}/verify-email/${verificationToken}">Verify Email</a>`
+      `
+      <h2>Verify Your Email</h2>
+
+      <p>
+        Click below to verify your account:
+      </p>
+
+      <a href="${process.env.CLIENT_URL}/verify-email/${verificationToken}">
+        Verify Email
+      </a>
+      `
     );
 
-    const permissions = Array.from(await resolvePermissions(role.id));
-
-    const accessToken = generateAccessToken({
-      id: user.id,
-      roleId: role.id,
-      roleName: role.name,
-      permissions,
-    });
-
-    const refreshToken = generateRefreshToken();
-
-    // 🔐 CSRF
-    const { rawToken, hashedToken } = createCsrfPair();
-
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        csrfHash: hashedToken,
-        csrfPrevHash: null,
-        userAgent: req.headers["user-agent"] ?? null,
-        ipAddress: req.ip ?? null,
-        expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY),
-      },
-    });
-
-    const isProd = process.env.NODE_ENV === "production";
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
-      path: "/",
-    });
-
-    return res.status(201).json({
-      accessToken,
-      csrfToken: rawToken, // 🔥 send to frontend
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        roleName: role.name,
-        permissions,
-      },
-    });
+    return res
+      .status(201)
+      .json({
+        message:
+          "Signup successful. Please verify your email.",
+      });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server Error" });
+  console.error(
+    "Signup Error:",
+    error
+  );
+
+  return res.status(500).json({
+    message: "Server Error",
+    error,
+    });
   }
 };
 
@@ -124,34 +275,77 @@ export const signup = async (req: Request, res: Response): Promise<Response> => 
 // VERIFY EMAIL
 // ================================================================
 
-export const verifyEmail = async (req: Request, res: Response) => {
+export const verifyEmail = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   try {
-    const tokenParam = req.params.token;
+    const token = Array.isArray(req.params.token)
+    ? req.params.token[0]
+    : req.params.token;
 
-    if (!tokenParam || Array.isArray(tokenParam)) {
-      return res.status(400).json({ message: "Invalid verification token" });
-    }
-
-    const user = await prisma.user.findFirst({
-      where: { verificationToken: tokenParam },
+    if (!token) {
+    return res.status(400).json({
+      message: "Invalid verification token",
     });
+  }
+
+    const user =
+      await prisma.user.findFirst({
+        where: {
+          verificationToken:
+            token,
+        },
+      });
 
     if (!user) {
-      return res.status(400).json({ message: "Invalid verification token" });
+      return res
+        .status(400)
+        .json({
+          message:
+            "Invalid or expired verification link",
+        });
+    }
+
+    if (
+      user.emailVerified
+    ) {
+      return res.json({
+        message:
+          "Email already verified",
+      });
     }
 
     await prisma.user.update({
-      where: { id: user.id },
+      where: {
+        id: user.id,
+      },
+
       data: {
-        emailVerified: true,
-        verificationToken: null,
+        emailVerified:
+          true,
+
+        verificationToken:
+          null,
       },
     });
 
-    return res.json({ message: "Email verified successfully" });
+    return res.json({
+      message:
+        "Email verified successfully",
+    });
   } catch (error) {
-    console.error("Verify Email Error:", error);
-    return res.status(500).json({ message: "Server Error" });
+    console.error(
+      "Verify Email Error:",
+      error
+    );
+
+    return res
+      .status(500)
+      .json({
+        message:
+          "Server Error",
+      });
   }
 };
 
@@ -159,82 +353,120 @@ export const verifyEmail = async (req: Request, res: Response) => {
 // SIGNIN
 // ================================================================
 
-export const signin = async (req: Request, res: Response): Promise<Response> => {
+export const signin = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   try {
-    const parsed = signinSchema.safeParse(req.body);
+    const parsed =
+      signinSchema.safeParse(
+        req.body
+      );
+
     if (!parsed.success) {
-      return res.status(400).json({ errors: parsed.error.format() });
+      return res
+        .status(400)
+        .json({
+          errors:
+            parsed.error.format(),
+        });
     }
 
-    const { email, password } = parsed.data;
+    const {
+      email,
+      password,
+    } = parsed.data;
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: { role: true },
-    });
+    const user =
+      await prisma.user.findUnique({
+        where: { email },
+        include: {
+          role: true,
+        },
+      });
 
     if (!user || !user.role) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      return res
+        .status(400)
+        .json({
+          message:
+            "Invalid credentials",
+        });
     }
 
     if (!user.emailVerified) {
-      return res.status(403).json({ message: "Verify your email" });
+      return res
+        .status(403)
+        .json({
+          message:
+            "Verify your email",
+        });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch =
+      await bcrypt.compare(
+        password,
+        user.password
+      );
+
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      return res
+        .status(400)
+        .json({
+          message:
+            "Invalid credentials",
+        });
     }
 
-    const permissions = Array.from(await resolvePermissions(user.role.id));
+    const permissions =
+      Array.from(
+        await resolvePermissions(
+          user.role.id
+        )
+      );
 
-    const accessToken = generateAccessToken({
-      id: user.id,
-      roleId: user.role.id,
-      roleName: user.role.name,
-      permissions,
-    });
+    const accessToken =
+      generateAccessToken({
+        id: user.id,
+        roleId: user.role.id,
+        roleName:
+          user.role.name,
+        permissions,
+      });
 
-    const refreshToken = generateRefreshToken();
+    const {
+      refreshToken,
+      csrfToken,
+    } = await createSession(
+      req,
+      user.id
+    );
 
-    // 🔐 CSRF
-    const { rawToken, hashedToken } = createCsrfPair();
-
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        csrfHash: hashedToken,
-        csrfPrevHash: null,
-        userAgent: req.headers["user-agent"] ?? null,
-        ipAddress: req.ip ?? null,
-        expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY),
-      },
-    });
-
-    const isProd = process.env.NODE_ENV === "production";
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
-      path: "/",
-    });
+    setRefreshCookie(
+      res,
+      refreshToken
+    );
 
     return res.json({
       accessToken,
-      csrfToken: rawToken,
+      csrfToken,
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
-        roleName: user.role.name,
+        roleName:
+          user.role.name,
         permissions,
       },
     });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: "Server Error" });
+
+    return res
+      .status(500)
+      .json({
+        message: "Server Error",
+      });
   }
 };
 
@@ -242,12 +474,26 @@ export const signin = async (req: Request, res: Response): Promise<Response> => 
 // REFRESH TOKEN
 // ================================================================
 
-export const refresh = async (req: Request, res: Response) => {
+export const refresh = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   try {
     const token = req.cookies?.refreshToken;
 
+    const isProd = process.env.NODE_ENV === "production";
+
     if (!token) {
-      return res.status(401).json({ message: "No refresh token" });
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd ? "none" : "lax",
+        path: "/",
+      });
+
+      return res.status(401).json({
+        message: "No refresh token",
+      });
     }
 
     const stored = await prisma.refreshToken.findUnique({
@@ -255,12 +501,33 @@ export const refresh = async (req: Request, res: Response) => {
     });
 
     if (!stored) {
-      return res.status(403).json({ message: "Invalid refresh token" });
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd ? "none" : "lax",
+        path: "/",
+      });
+
+      return res.status(403).json({
+        message: "Invalid refresh token",
+      });
     }
 
-    if (stored.expiresAt < new Date()) {
-      await prisma.refreshToken.deleteMany({ where: { token } });
-      return res.status(403).json({ message: "Expired token" });
+    if (stored.expiresAt <= new Date()) {
+      await prisma.refreshToken.delete({
+        where: { token },
+      });
+
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd ? "none" : "lax",
+        path: "/",
+      });
+
+      return res.status(403).json({
+        message: "Expired refresh token",
+      });
     }
 
     const user = await prisma.user.findUnique({
@@ -269,53 +536,54 @@ export const refresh = async (req: Request, res: Response) => {
     });
 
     if (!user || !user.role) {
-      return res.status(404).json({ message: "User not found" });
+      await prisma.refreshToken.deleteMany({
+        where: { userId: stored.userId },
+      });
+
+      return res.status(404).json({
+        message: "User not found",
+      });
     }
 
-    const permissions = Array.from(await resolvePermissions(user.role.id));
+    const permissions = Array.from(
+      await resolvePermissions(user.role.id)
+    );
 
-    await prisma.refreshToken.deleteMany({ where: { token } });
+    // ❗ rotate token safely
+    await prisma.refreshToken.delete({
+      where: { token },
+    });
 
     const newRefreshToken = generateRefreshToken();
-
-    // 🔐 CSRF
-    const { rawToken, hashedToken } = createCsrfPair();
 
     await prisma.refreshToken.create({
       data: {
         token: newRefreshToken,
         userId: user.id,
-        csrfHash: hashedToken,
-        csrfPrevHash: null,
         userAgent: req.headers["user-agent"] ?? null,
         ipAddress: req.ip ?? null,
         expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY),
       },
     });
 
-    const newAccessToken = generateAccessToken({
+    const accessToken = generateAccessToken({
       id: user.id,
       roleId: user.role.id,
       roleName: user.role.name,
       permissions,
     });
 
-    const isProd = process.env.NODE_ENV === "production";
-
-    res.cookie("refreshToken", newRefreshToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
-      path: "/",
-    });
+    setRefreshCookie(res, newRefreshToken);
 
     return res.json({
-      accessToken: newAccessToken,
-      csrfToken: rawToken,
+      accessToken,
     });
-  } catch (err) {
-    console.error("REFRESH ERROR:", err);
-    return res.status(500).json({ message: "Server Error" });
+  } catch (error) {
+    console.error("REFRESH ERROR:", error);
+
+    return res.status(500).json({
+      message: "Server Error",
+    });
   }
 };
 
@@ -323,26 +591,47 @@ export const refresh = async (req: Request, res: Response) => {
 // SIGNOUT
 // ================================================================
 
-export const signout = async (req: Request, res: Response): Promise<Response> => {
+export const signout = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   try {
-    const token = req.cookies?.refreshToken;
+    const token =
+      req.cookies?.refreshToken;
 
     if (token) {
-      await prisma.refreshToken.deleteMany({ where: { token } });
+      await prisma.refreshToken.deleteMany(
+        {
+          where: { token },
+        }
+      );
     }
 
-    const isProd = process.env.NODE_ENV === "production";
+    const isProd =
+      process.env.NODE_ENV ===
+      "production";
 
-    res.clearCookie("refreshToken", {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
-      path: "/",
+    res.clearCookie(
+      "refreshToken",
+      {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd
+          ? "none"
+          : "lax",
+        path: "/",
+      }
+    );
+
+    return res.json({
+      message: "Logged out",
     });
-
-    return res.json({ message: "Logged out" });
   } catch {
-    return res.status(500).json({ message: "Server Error" });
+    return res
+      .status(500)
+      .json({
+        message: "Server Error",
+      });
   }
 };
 
@@ -350,29 +639,60 @@ export const signout = async (req: Request, res: Response): Promise<Response> =>
 // FORGOT PASSWORD
 // ================================================================
 
-export const forgotPassword = async (req: Request, res: Response): Promise<Response> => {
+export const forgotPassword = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   try {
-    const parsed = forgotPasswordSchema.safeParse(req.body);
+    const parsed =
+      forgotPasswordSchema.safeParse(
+        req.body
+      );
+
     if (!parsed.success) {
-      return res.status(400).json({ errors: parsed.error.format() });
+      return res
+        .status(400)
+        .json({
+          errors:
+            parsed.error.format(),
+        });
     }
 
-    const { email } = parsed.data;
+    const { email } =
+      parsed.data;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user =
+      await prisma.user.findUnique({
+        where: { email },
+      });
 
     if (!user) {
-      return res.json({ message: "If that email exists, a reset link has been sent." });
+      return res.json({
+        message:
+          "If that email exists, a reset link has been sent.",
+      });
     }
 
-    const resetToken = randomBytes(32).toString("hex");
-    const hashedToken = createHash("sha256").update(resetToken).digest("hex");
+    const resetToken =
+      randomBytes(32).toString(
+        "hex"
+      );
+
+    const hashedToken =
+      createHash("sha256")
+        .update(resetToken)
+        .digest("hex");
 
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        resetPasswordToken: hashedToken,
-        resetPasswordExpires: new Date(Date.now() + RESET_TOKEN_EXPIRY),
+        resetPasswordToken:
+          hashedToken,
+        resetPasswordExpires:
+          new Date(
+            Date.now() +
+              RESET_TOKEN_EXPIRY
+          ),
       },
     });
 
@@ -384,9 +704,16 @@ export const forgotPassword = async (req: Request, res: Response): Promise<Respo
       `<p>Click below to reset your password:</p><a href="${resetLink}">Reset Password</a>`
     );
 
-    return res.json({ message: "If that email exists, a reset link has been sent." });
+    return res.json({
+      message:
+        "If that email exists, a reset link has been sent.",
+    });
   } catch {
-    return res.status(500).json({ message: "Server Error" });
+    return res
+      .status(500)
+      .json({
+        message: "Server Error",
+      });
   }
 };
 
@@ -394,42 +721,84 @@ export const forgotPassword = async (req: Request, res: Response): Promise<Respo
 // RESET PASSWORD
 // ================================================================
 
-export const resetPassword = async (req: Request, res: Response): Promise<Response> => {
+export const resetPassword = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   try {
-    const parsed = resetPasswordSchema.safeParse(req.body);
+    const parsed =
+      resetPasswordSchema.safeParse(
+        req.body
+      );
+
     if (!parsed.success) {
-      return res.status(400).json({ errors: parsed.error.format() });
+      return res
+        .status(400)
+        .json({
+          errors:
+            parsed.error.format(),
+        });
     }
 
-    const { token, password } = parsed.data;
+    const {
+      token,
+      password,
+    } = parsed.data;
 
-    const hashedToken = createHash("sha256").update(token).digest("hex");
+    const hashedToken =
+      createHash("sha256")
+        .update(token)
+        .digest("hex");
 
-    const user = await prisma.user.findFirst({
-      where: {
-        resetPasswordToken: hashedToken,
-        resetPasswordExpires: { gt: new Date() },
-      },
-    });
+    const user =
+      await prisma.user.findFirst({
+        where: {
+          resetPasswordToken:
+            hashedToken,
+          resetPasswordExpires:
+            {
+              gt: new Date(),
+            },
+        },
+      });
 
     if (!user) {
-      return res.status(400).json({ message: "Invalid or expired token" });
+      return res
+        .status(400)
+        .json({
+          message:
+            "Invalid or expired token",
+        });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword =
+      await bcrypt.hash(
+        password,
+        10
+      );
 
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        password: hashedPassword,
-        resetPasswordToken: null,
-        resetPasswordExpires: null,
+        password:
+          hashedPassword,
+        resetPasswordToken:
+          null,
+        resetPasswordExpires:
+          null,
       },
     });
 
-    return res.json({ message: "Password reset successful" });
+    return res.json({
+      message:
+        "Password reset successful",
+    });
   } catch {
-    return res.status(500).json({ message: "Server Error" });
+    return res
+      .status(500)
+      .json({
+        message: "Server Error",
+      });
   }
 };
 
@@ -437,78 +806,71 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
 // ME
 // ================================================================
 
-export const me = async (req: Request, res: Response) => {
+export const me = async (
+  req: Request,
+  res: Response
+) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res
+        .status(401)
+        .json({
+          message:
+            "Unauthorized",
+        });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      include: { role: true },
-    });
+    const user =
+      await prisma.user.findUnique({
+        where: {
+          id: req.user.id,
+        },
+        include: {
+          role: true,
+        },
+      });
 
     if (!user || !user.role) {
-      return res.status(404).json({ message: "User not found" });
+      return res
+        .status(404)
+        .json({
+          message:
+            "User not found",
+        });
     }
 
-    const permissions = Array.from(await resolvePermissions(user.role.id));
+    const permissions =
+      Array.from(
+        await resolvePermissions(
+          user.role.id
+        )
+      );
 
     return res.json({
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
-        roleName: user.role.name,
+        roleName:
+          user.role.name,
         permissions,
       },
     });
   } catch {
-    return res.status(500).json({ message: "Server Error" });
+    return res
+      .status(500)
+      .json({
+        message: "Server Error",
+      });
   }
 };
 
-export const csrf = async (
-  req: Request,
-  res: Response
-) => {
+// ================================================================
+// CSRF
+// ================================================================
+export const csrf = async (_req: Request, res: Response) => {
   try {
-    const refreshToken =
-      req.cookies?.refreshToken;
-
-    if (!refreshToken) {
-      return res.status(401).json({
-        message: "No session",
-      });
-    }
-
-    const session =
-      await prisma.refreshToken.findUnique({
-        where: {
-          token: refreshToken,
-        },
-      });
-
-    if (!session) {
-      return res.status(401).json({
-        message: "Invalid session",
-      });
-    }
-
-    const raw =
-      generateCsrfToken();
-
-    const hash =
-      hashCsrfToken(raw);
-
-    await prisma.refreshToken.update({
-      where: {
-        token: refreshToken,
-      },
-      data: {
-        csrfHash: hash,
-      },
-    });
+    const raw = generateCsrfToken();
 
     return res.json({
       csrfToken: raw,

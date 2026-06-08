@@ -1,51 +1,13 @@
-import { Router } from "express";
-import { ShippingRateController } from "../controllers/shipping-rate.controller.js";
+import { Router } from 'express'
+import { ShippingRateController } from '../controllers/shipping-rate.controller.js'
 
-const router = Router();
+const router = Router()
+const controller = new ShippingRateController()
 
-/**
- * FIND BEST RATE
- * keep above /:id
- */
-router.post(
-  "/find-best-rate",
-  ShippingRateController.findBestRate
-);
+router.get('/zones/:zoneId/rates', controller.getZoneRates.bind(controller))
+router.post('/rates/calculate', controller.getBestRate.bind(controller))
+router.post('/rates', controller.createRate.bind(controller))
+router.patch('/rates/:id/toggle', controller.toggleRate.bind(controller))
+router.delete('/rates/:id', controller.deleteRate.bind(controller))
 
-// CREATE
-router.post(
-  "/",
-  ShippingRateController.create
-);
-
-// GET ALL
-router.get(
-  "/",
-  ShippingRateController.findAll
-);
-
-// GET ONE
-router.get(
-  "/:id",
-  ShippingRateController.findById
-);
-
-// UPDATE
-router.patch(
-  "/:id",
-  ShippingRateController.update
-);
-
-// TOGGLE ACTIVE
-router.patch(
-  "/:id/toggle-active",
-  ShippingRateController.toggleActive
-);
-
-// DELETE
-router.delete(
-  "/:id",
-  ShippingRateController.delete
-);
-
-export default router;
+export default router

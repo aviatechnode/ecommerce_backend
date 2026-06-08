@@ -1,0 +1,65 @@
+// SHIPPING ZONES (NIGERIA ONLY)
+model ShippingZone {
+  id        String   @id @default(cuid())
+  name      String @unique
+  states    State[]
+  lgas      LGA[]
+  isActive  Boolean    @default(true)
+  rates     ShippingRate[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  @@index([isActive])
+}
+
+// SHIPPING RATE ENGINE (CORE LOGIC)
+model ShippingRate {
+  id              String   @id @default(cuid())
+  zoneId          String
+  zone            ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  name            String
+  deliveryMethod  DeliveryMethod
+  // Pricing
+  baseFee         Decimal  @db.Decimal(10, 2)
+  currency        String   @default("NGN")
+  // Optional rule-based adjustments
+  minWeight       Float?
+  maxWeight       Float?
+  weightFee       Decimal? @db.Decimal(10, 2)
+  minDistanceKm   Float?
+  maxDistanceKm   Float?
+  distanceFeeKm   Decimal? @db.Decimal(10, 2)
+  minOrderValue   Decimal? @db.Decimal(10, 2)
+  maxOrderValue   Decimal? @db.Decimal(10, 2)
+  // Delivery estimates (Nigeria context)
+  estimatedDaysMin Int?
+  estimatedDaysMax Int?
+
+  priority        Int      @default(1)
+  isActive        Boolean  @default(true)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([zoneId, isActive])
+  @@index([zoneId, deliveryMethod])
+}
+
+// OPTIONAL CACHE (FAST CHECKOUT)
+model ShippingQuoteCache {
+  id              String   @id @default(cuid())
+
+  hash            String   @unique
+
+  zoneId          String?
+  deliveryMethod  DeliveryMethod?
+
+  fee             Decimal  @db.Decimal(10, 2)
+  currency        String   @default("NGN")
+
+  expiresAt       DateTime
+
+  createdAt       DateTime @default(now())
+
+  @@index([expiresAt])
+  @@index([zoneId])
+}
