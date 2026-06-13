@@ -1,83 +1,62 @@
 import { Router } from "express";
-
-import {
-  assignProductFitment,
-  bulkAssignProductFitment,
-  createEngine,
-  createGeneration,
-  createMake,
-  createModel,
-  createTrim,
-  deleteEngine,
-  deleteGeneration,
-  deleteMake,
-  deleteModel,
-  deleteTrim,
-  getProductsByFitment,
-  getVehicleTree,
-  updateEngine,
-  updateGeneration,
-  updateMake,
-  updateModel,
-  updateTrim,
-} from "../controllers/fitment.controller.js";
+import { FitmentController } from "../controllers/fitment.controller.js";
 
 const router = Router();
 
-// VEHICLE TREE
-router.post("/makes", createMake);
+//
+// CONFIG
+//
+router.get("/config", FitmentController.getConfig);
+router.patch("/config", FitmentController.updateConfig);
 
-router.post("/models", createModel);
+//
+// RULES
+//
+router.get("/rules", FitmentController.getRules);
+router.post("/rules", FitmentController.createRule);
+router.patch("/rules/:id", FitmentController.updateRule);
+router.delete("/rules/:id", FitmentController.deleteRule);
 
-router.post("/generations", createGeneration);
+//
+// OEM REFERENCES
+//
+router.get("/oem-references", FitmentController.getOEMReferences);
+router.post("/oem-references", FitmentController.createOEMReference);
+router.patch("/oem-references/:id", FitmentController.updateOEMReference);
+router.delete("/oem-references/:id", FitmentController.deleteOEMReference);
 
-router.post("/engines", createEngine);
-
-router.post("/trims", createTrim);
-
-// Assign single fitment
-router.post(
-  "/products/assign",
-  assignProductFitment
+//
+// CROSS REFERENCES
+//
+router.get("/cross-references", FitmentController.getCrossReferences);
+router.post("/cross-references", FitmentController.createCrossReference);
+router.patch("/cross-references/:id", FitmentController.updateCrossReference);
+router.delete(
+  "/cross-references/:id",
+  FitmentController.deleteCrossReference
 );
 
-// Bulk assign fitments using trimIds
-router.post(
-  "/products/bulk-assign",
-  bulkAssignProductFitment
-);
+//
+// PRODUCT FITMENTS
+//
+router.get("/fitments", FitmentController.getFitments);
+router.post("/fitments", FitmentController.createFitment);
+router.patch("/fitments/:id", FitmentController.updateFitment);
+router.delete("/fitments/:id", FitmentController.deleteFitment);
 
-// Get products by fitment filters
-router.get(
-  "/products",
-  getProductsByFitment
-);
+//
+// RESOLUTION
+//
+router.post("/resolve", FitmentController.resolveFitment);
 
-// Full nested make → model → generation → engine → trim tree
-router.get(
-  "/tree",
-  getVehicleTree
-);
+//
+// INDEX
+//
+router.post("/rebuild-index", FitmentController.rebuildIndex);
+
+//
+// LOGS
+//
+router.get("/logs", FitmentController.logs);
 
 export default router;
-
-
-/* =========================================================
-DELETE
-========================================================= */
-
-router.delete("/makes/:id", deleteMake);
-router.delete("/models/:id", deleteModel);
-router.delete("/generations/:id", deleteGeneration);
-router.delete("/engines/:id", deleteEngine);
-router.delete("/trims/:id", deleteTrim);
-
-/* =========================================================
-UPDATE
-========================================================= */
-
-router.put("/makes/:id", updateMake);
-router.put("/models/:id", updateModel);
-router.put("/generations/:id", updateGeneration);
-router.put("/engines/:id", updateEngine);
-router.put("/trims/:id", updateTrim);

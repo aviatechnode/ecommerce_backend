@@ -1,0 +1,100 @@
+
+//////////////////////////////////////////////////////////
+// VEHICLE DOMAIN
+//////////////////////////////////////////////////////////
+model VehicleMake {
+  id              String           @id @default(uuid())
+  name            String           @unique
+  slug            String           @unique
+  isActive        Boolean          @default(true)
+  models          VehicleModel[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  productFitments ProductFitment[]
+
+  @@index([isActive])
+}
+
+model VehicleModel {
+  id              String              @id @default(uuid())
+  makeId          String
+  name            String
+  slug            String
+  isActive        Boolean             @default(true)
+  make            VehicleMake         @relation(fields: [makeId], references: [id], onDelete: Cascade)
+  generations     VehicleGeneration[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  productFitments ProductFitment[]
+
+  @@unique([makeId, name])
+  @@unique([makeId, slug])
+  @@index([makeId])
+  @@index([isActive])
+}
+
+model VehicleGeneration {
+  id              String           @id @default(uuid())
+  modelId         String
+  name            String
+  slug            String?
+  chassisCode     String?
+  yearStart       Int
+  yearEnd         Int?
+  isActive        Boolean          @default(true)
+  model           VehicleModel     @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  engines         VehicleEngine[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  productFitments ProductFitment[]
+
+  @@unique([modelId, name])
+  @@index([modelId])
+  @@index([yearStart, yearEnd])
+  @@index([isActive])
+  @@index([chassisCode])
+}
+
+model VehicleEngine {
+  id                String            @id @default(uuid())
+  generationId      String
+  engineCode        String
+  engineName        String?
+  fuelType          FuelType?
+  aspiration        AspirationType?
+  cylinders         Int?
+  horsepower        Int?
+  displacementCc    Int?
+  displacementLabel String?
+  drivetrain        DriveType?
+  transmissionType  TransmissionType?
+  isActive          Boolean           @default(true)
+  generation        VehicleGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  trims             VehicleTrim[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  productFitments   ProductFitment[]
+
+  @@unique([generationId, engineCode])
+  @@index([generationId])
+  @@index([engineCode])
+  @@index([fuelType])
+  @@index([isActive])
+}
+
+model VehicleTrim {
+  id              String           @id @default(uuid())
+  engineId        String
+  name            String
+  bodyType        BodyType?
+  doors           Int?
+  isActive        Boolean          @default(true)
+  engine          VehicleEngine    @relation(fields: [engineId], references: [id], onDelete: Cascade)
+  productFitments ProductFitment[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([engineId, name])
+  @@index([engineId])
+  @@index([isActive])
+}

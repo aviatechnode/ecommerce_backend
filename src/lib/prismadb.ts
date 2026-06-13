@@ -86,3 +86,5 @@ export const prisma = baseClient.$extends({
 });
 
 export type PrismaInstance = typeof prisma;
+
+export type PrismaTransaction = Parameters<Parameters<PrismaInstance["$transaction"]>[0]>[0];

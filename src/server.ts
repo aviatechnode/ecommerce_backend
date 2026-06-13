@@ -43,6 +43,8 @@ import checkoutSessionRoutes from "./routes/checkout-session.routes.js";
 import fulfillmentRoutes from "./routes/fulfillment.routes.js";
 import shippingQuoteRoutes from "./routes/shipping-quote.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
+import vehicleRoutes from "./routes/vehicle.routes.js";
+
 
 import { idempotencyMiddleware } from "./middlewares/idempotency.middleware.js";
 import { requestContextMiddleware } from "./middlewares/request.context.middleware.js";
@@ -133,6 +135,8 @@ app.use("/api/checkout-sessions", checkoutSessionRoutes);
 app.use("/api/fulfillments", fulfillmentRoutes);
 app.use("/api/shipping-quotes", shippingQuoteRoutes);
 app.use("/api/chats", chatRoutes);
+
+app.use("/api/vehicles", vehicleRoutes);
 app.post(
   "/webhook/paystack",
   express.raw({ type: "application/json" }),

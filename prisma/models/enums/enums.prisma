@@ -152,12 +152,75 @@ enum ShippingMethod {
 }
 
 // VEHICLE FITMENT
+enum FitmentType {
+  UNIVERSAL
+  EXACT
+  RANGE
+  ENGINE_SPECIFIC
+  TRIM_SPECIFIC
+  OEM_MATCH
+  CROSS_REFERENCE
+  GENERATION_ONLY
+}
+
 enum FitmentLevel {
+  GLOBAL
   MAKE
   MODEL
   GENERATION
   ENGINE
   TRIM
+  EXACT_MATCH
+}
+
+// FUEL TYPE
+enum FuelType {
+  PETROL
+  DIESEL
+  HYBRID
+  PLUG_IN_HYBRID
+  ELECTRIC
+  LPG
+  CNG
+}
+
+// ASPIRATION TYPE
+enum AspirationType {
+  NA
+  TURBO
+  TWIN_TURBO
+  SUPERCHARGED
+}
+
+// TRANSMISSION TYPE
+enum TransmissionType {
+  MANUAL
+  AUTOMATIC
+  CVT
+  DCT
+}
+// DRIVE TYPE
+enum DriveType {
+  FWD
+  RWD
+  AWD
+  FOUR_WD
+}
+
+// BODY TYPE
+
+enum BodyType {
+  SEDAN
+  HATCHBACK
+  COUPE
+  CONVERTIBLE
+  SUV
+  CROSSOVER
+  PICKUP
+  WAGON
+  VAN
+  MINIVAN
+  MPV
 }
 
 enum ShipmentEventSource {

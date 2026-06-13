@@ -1,5 +1,5 @@
-import { STATE_LGAS } from "../src/constants/nigeria";
-import { prisma } from "../src/lib/prismadb";
+import { STATE_LGAS } from "../src/constants/nigeria.js";
+import { prisma } from "../src/lib/prismadb.js";
 
 const formatStateName = (key: string) => {
   if (key === "FCT") return "Federal Capital Territory";

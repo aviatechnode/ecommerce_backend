@@ -1,0 +1,271 @@
+//////////////////////////////////////////////////////////
+// FITMENT SYSTEM CORE
+//////////////////////////////////////////////////////////
+
+model FitmentServiceConfig {
+  id String @id @default(uuid())
+
+  name String @unique
+  description String?
+
+  isActive Boolean @default(true)
+
+  allowUniversalFallback Boolean @default(true)
+  allowCrossGenerationMatch Boolean @default(false)
+  allowEngineFallback Boolean @default(false)
+
+  weightMake Int @default(100)
+  weightModel Int @default(200)
+  weightGeneration Int @default(300)
+  weightEngine Int @default(400)
+  weightTrim Int @default(500)
+  weightYear Int @default(250)
+
+  enableFitmentIndexing Boolean @default(true)
+  enableTextSearchFallback Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FitmentTypeRule {
+  id String @id @default(uuid())
+
+  type FitmentType
+  level FitmentLevel
+
+  requiresMake Boolean @default(false)
+  requiresModel Boolean @default(false)
+  requiresGeneration Boolean @default(false)
+  requiresEngine Boolean @default(false)
+  requiresTrim Boolean @default(false)
+  requiresYear Boolean @default(false)
+
+  allowYearRange Boolean @default(true)
+  strictMatching Boolean @default(false)
+
+  priority Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([level])
+}
+
+model FitmentResolutionLog {
+  id String @id @default(uuid())
+
+  productId String
+
+  inputMake String?
+  inputModel String?
+  inputGeneration String?
+  inputEngine String?
+  inputTrim String?
+  inputYear Int?
+
+  matched Boolean @default(false)
+
+  matchedLevel FitmentLevel?
+  matchedType FitmentType?
+
+  score Int?
+
+  resolutionPath String?
+  notes String?
+
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([matched])
+}
+
+//////////////////////////////////////////////////////////
+// OEM REFERENCES
+//////////////////////////////////////////////////////////
+
+model OEMReference {
+  id String @id @default(uuid())
+
+  manufacturer String
+  partNumber String
+
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fitments ProductFitmentOEM[]
+
+  @@unique([manufacturer, partNumber])
+  @@index([partNumber])
+  @@index([manufacturer])
+}
+
+//////////////////////////////////////////////////////////
+// AFTERMARKET / INTERCHANGE REFERENCES
+//////////////////////////////////////////////////////////
+
+model CrossReference {
+  id String @id @default(uuid())
+
+  brand String
+  partNumber String
+
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fitments ProductFitmentCrossReference[]
+
+  @@unique([brand, partNumber])
+  @@index([partNumber])
+  @@index([brand])
+}
+
+//////////////////////////////////////////////////////////
+// FITMENT INDEX
+//////////////////////////////////////////////////////////
+
+model FitmentIndex {
+  id String @id @default(uuid())
+
+  productId String
+
+  makeId String
+  make String
+
+  modelId String
+  model String
+
+  generationId String?
+  generation String?
+
+  engineId String?
+  engineCode String?
+
+  trimId String?
+  trim String?
+
+  year Int
+
+  searchableText String?
+
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, makeId, modelId, generationId, engineId, trimId, year])
+
+  @@index([productId])
+  @@index([makeId])
+  @@index([modelId])
+  @@index([generationId])
+  @@index([engineId])
+  @@index([trimId])
+  @@index([year])
+}
+
+//////////////////////////////////////////////////////////
+// PRODUCT FITMENT
+//////////////////////////////////////////////////////////
+
+model ProductFitment {
+  id String @id @default(uuid())
+
+  productId String
+
+  level FitmentLevel
+  type FitmentType @default(EXACT)
+
+  makeId String?
+  modelId String?
+  generationId String?
+  engineId String?
+  trimId String?
+
+  yearStart Int?
+  yearEnd Int?
+
+  notes String?
+  position String?
+
+  quantityRequired Int?
+
+  isUniversal Boolean @default(false)
+  isVerified Boolean @default(false)
+
+  confidenceScore Int?
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  make VehicleMake? @relation(fields: [makeId], references: [id])
+
+  model VehicleModel? @relation(fields: [modelId], references: [id])
+
+  generation VehicleGeneration? @relation(fields: [generationId], references: [id])
+
+  engine VehicleEngine? @relation(fields: [engineId], references: [id])
+
+  trim VehicleTrim? @relation(fields: [trimId], references: [id])
+
+  oemReferences ProductFitmentOEM[]
+  crossReferences ProductFitmentCrossReference[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, level, type, makeId, modelId, generationId, engineId, trimId, yearStart, yearEnd])
+
+  @@index([productId])
+  @@index([level])
+  @@index([type])
+  @@index([makeId, modelId])
+  @@index([generationId, engineId, trimId])
+  @@index([yearStart, yearEnd])
+  @@index([isUniversal])
+  @@index([isVerified])
+}
+
+//////////////////////////////////////////////////////////
+// PRODUCT FITMENT ↔ OEM
+//////////////////////////////////////////////////////////
+
+model ProductFitmentOEM {
+  id String @id @default(uuid())
+
+  productFitmentId String
+  oemReferenceId String
+
+  productFitment ProductFitment @relation(fields: [productFitmentId], references: [id], onDelete: Cascade)
+
+  oemReference OEMReference @relation(fields: [oemReferenceId], references: [id], onDelete: Cascade)
+
+  @@unique([productFitmentId, oemReferenceId])
+
+  @@index([productFitmentId])
+  @@index([oemReferenceId])
+}
+
+//////////////////////////////////////////////////////////
+// PRODUCT FITMENT ↔ CROSS REFERENCE
+//////////////////////////////////////////////////////////
+
+model ProductFitmentCrossReference {
+  id String @id @default(uuid())
+
+  productFitmentId String
+  crossReferenceId String
+
+  productFitment ProductFitment @relation(fields: [productFitmentId], references: [id], onDelete: Cascade)
+
+  crossReference CrossReference @relation(fields: [crossReferenceId], references: [id], onDelete: Cascade)
+
+  @@unique([productFitmentId, crossReferenceId])
+
+  @@index([productFitmentId])
+  @@index([crossReferenceId])
+}

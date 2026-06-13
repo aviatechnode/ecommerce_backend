@@ -62,7 +62,10 @@ CREATE TYPE "PaymentProvider" AS ENUM ('PAYSTACK', 'FLUTTERWAVE', 'STRIPE', 'BAN
 CREATE TYPE "ShippingMethod" AS ENUM ('STANDARD', 'EXPRESS', 'SAME_DAY', 'PICKUP_STATION');
 
 -- CreateEnum
-CREATE TYPE "FitmentLevel" AS ENUM ('MAKE', 'MODEL', 'GENERATION', 'ENGINE', 'TRIM');
+CREATE TYPE "FitmentType" AS ENUM ('UNIVERSAL', 'EXACT', 'RANGE', 'ENGINE_SPECIFIC', 'TRIM_SPECIFIC', 'OEM_MATCH', 'CROSS_REFERENCE', 'GENERATION_ONLY');
+
+-- CreateEnum
+CREATE TYPE "FitmentLevel" AS ENUM ('GLOBAL', 'MAKE', 'MODEL', 'GENERATION', 'ENGINE', 'TRIM', 'EXACT_MATCH');
 
 -- CreateEnum
 CREATE TYPE "ShipmentEventSource" AS ENUM ('SYSTEM', 'COURIER', 'ADMIN', 'CUSTOMER');
@@ -99,6 +102,191 @@ CREATE TYPE "MessageType" AS ENUM ('TEXT', 'IMAGE', 'FILE', 'ORDER_EVENT', 'PAYM
 
 -- CreateEnum
 CREATE TYPE "MessageDeliveryStatus" AS ENUM ('SENT', 'DELIVERED', 'READ', 'FAILED');
+
+-- CreateTable
+CREATE TABLE "VehicleMake" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "VehicleMake_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "VehicleModel" (
+    "id" TEXT NOT NULL,
+    "makeId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "VehicleModel_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "VehicleGeneration" (
+    "id" TEXT NOT NULL,
+    "modelId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT,
+    "chassisCode" TEXT,
+    "yearStart" INTEGER NOT NULL,
+    "yearEnd" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "VehicleGeneration_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "VehicleEngine" (
+    "id" TEXT NOT NULL,
+    "generationId" TEXT NOT NULL,
+    "engineCode" TEXT NOT NULL,
+    "engineName" TEXT,
+    "fuelType" TEXT,
+    "aspiration" TEXT,
+    "cylinders" INTEGER,
+    "horsepower" INTEGER,
+    "displacementCc" INTEGER,
+    "displacementLabel" TEXT,
+    "drivetrain" TEXT,
+    "transmissionType" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "VehicleEngine_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "VehicleTrim" (
+    "id" TEXT NOT NULL,
+    "engineId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "bodyType" TEXT,
+    "doors" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "VehicleTrim_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "FitmentServiceConfig" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "allowUniversalFallback" BOOLEAN NOT NULL DEFAULT true,
+    "allowCrossGenerationMatch" BOOLEAN NOT NULL DEFAULT false,
+    "allowEngineFallback" BOOLEAN NOT NULL DEFAULT false,
+    "weightMake" INTEGER NOT NULL DEFAULT 100,
+    "weightModel" INTEGER NOT NULL DEFAULT 200,
+    "weightGeneration" INTEGER NOT NULL DEFAULT 300,
+    "weightEngine" INTEGER NOT NULL DEFAULT 400,
+    "weightTrim" INTEGER NOT NULL DEFAULT 500,
+    "weightYear" INTEGER NOT NULL DEFAULT 250,
+    "enableFitmentIndexing" BOOLEAN NOT NULL DEFAULT true,
+    "enableTextSearchFallback" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "FitmentServiceConfig_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "FitmentTypeRule" (
+    "id" TEXT NOT NULL,
+    "type" "FitmentType" NOT NULL,
+    "level" "FitmentLevel" NOT NULL,
+    "requiresMake" BOOLEAN NOT NULL DEFAULT false,
+    "requiresModel" BOOLEAN NOT NULL DEFAULT false,
+    "requiresGeneration" BOOLEAN NOT NULL DEFAULT false,
+    "requiresEngine" BOOLEAN NOT NULL DEFAULT false,
+    "requiresTrim" BOOLEAN NOT NULL DEFAULT false,
+    "requiresYear" BOOLEAN NOT NULL DEFAULT false,
+    "allowYearRange" BOOLEAN NOT NULL DEFAULT true,
+    "strictMatching" BOOLEAN NOT NULL DEFAULT false,
+    "priority" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "FitmentTypeRule_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "FitmentResolutionLog" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "inputMake" TEXT,
+    "inputModel" TEXT,
+    "inputGeneration" TEXT,
+    "inputEngine" TEXT,
+    "inputTrim" TEXT,
+    "inputYear" INTEGER,
+    "matched" BOOLEAN NOT NULL DEFAULT false,
+    "matchedLevel" "FitmentLevel",
+    "matchedType" "FitmentType",
+    "score" INTEGER,
+    "resolutionPath" TEXT,
+    "notes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "FitmentResolutionLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "FitmentIndex" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "makeId" TEXT NOT NULL,
+    "make" TEXT NOT NULL,
+    "modelId" TEXT NOT NULL,
+    "model" TEXT NOT NULL,
+    "generationId" TEXT,
+    "generation" TEXT,
+    "engineId" TEXT,
+    "engineCode" TEXT,
+    "trimId" TEXT,
+    "trim" TEXT,
+    "year" INTEGER NOT NULL,
+    "searchableText" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "FitmentIndex_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ProductFitment" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "level" "FitmentLevel" NOT NULL,
+    "type" "FitmentType" NOT NULL DEFAULT 'EXACT',
+    "makeId" TEXT,
+    "modelId" TEXT,
+    "generationId" TEXT,
+    "engineId" TEXT,
+    "trimId" TEXT,
+    "yearStart" INTEGER,
+    "yearEnd" INTEGER,
+    "notes" TEXT,
+    "position" TEXT,
+    "quantityRequired" INTEGER,
+    "isUniversal" BOOLEAN NOT NULL DEFAULT false,
+    "isVerified" BOOLEAN NOT NULL DEFAULT false,
+    "confidenceScore" INTEGER,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProductFitment_pkey" PRIMARY KEY ("id")
+);
 
 -- CreateTable
 CREATE TABLE "DashboardSnapshot" (
@@ -255,248 +443,6 @@ CREATE TABLE "Brand" (
     "isFeatured" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "Brand_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "Product" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "slug" TEXT NOT NULL,
-    "description" TEXT,
-    "brandId" TEXT NOT NULL,
-    "categoryId" TEXT NOT NULL,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "searchKeywords" TEXT,
-    "isFeatured" BOOLEAN NOT NULL DEFAULT false,
-    "viewCount" INTEGER NOT NULL DEFAULT 0,
-    "soldCount" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-
-    CONSTRAINT "Product_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ProductVariant" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "sku" TEXT NOT NULL,
-    "price" DECIMAL(12,2) NOT NULL,
-    "costPrice" DECIMAL(12,2),
-    "weight" DOUBLE PRECISION,
-    "length" DOUBLE PRECISION,
-    "width" DOUBLE PRECISION,
-    "height" DOUBLE PRECISION,
-    "productId" TEXT NOT NULL,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "compareAtPrice" DECIMAL(12,2),
-    "barcode" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "ProductVariant_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ProductMedia" (
-    "id" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
-    "url" TEXT NOT NULL,
-    "type" "MediaType" NOT NULL,
-    "position" INTEGER NOT NULL,
-
-    CONSTRAINT "ProductMedia_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ProductSpecification" (
-    "id" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "value" TEXT NOT NULL,
-
-    CONSTRAINT "ProductSpecification_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ProductOEM" (
-    "id" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
-    "oemNumber" TEXT NOT NULL,
-
-    CONSTRAINT "ProductOEM_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ProductReview" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
-    "title" TEXT,
-    "rating" INTEGER NOT NULL,
-    "comment" TEXT,
-    "verifiedPurchase" BOOLEAN NOT NULL DEFAULT false,
-    "isApproved" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "ProductReview_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ProductSearchIndex" (
-    "id" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
-    "searchableText" TEXT NOT NULL,
-
-    CONSTRAINT "ProductSearchIndex_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "Attribute" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "slug" TEXT NOT NULL,
-
-    CONSTRAINT "Attribute_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "AttributeValue" (
-    "id" TEXT NOT NULL,
-    "attributeId" TEXT NOT NULL,
-    "value" TEXT NOT NULL,
-
-    CONSTRAINT "AttributeValue_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "VariantAttribute" (
-    "id" TEXT NOT NULL,
-    "variantId" TEXT NOT NULL,
-    "valueId" TEXT NOT NULL,
-
-    CONSTRAINT "VariantAttribute_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "VehicleMake" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "slug" TEXT NOT NULL,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "VehicleMake_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "VehicleModel" (
-    "id" TEXT NOT NULL,
-    "makeId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "slug" TEXT NOT NULL,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "VehicleModel_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "VehicleGeneration" (
-    "id" TEXT NOT NULL,
-    "modelId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "slug" TEXT,
-    "chassisCode" TEXT,
-    "yearStart" INTEGER NOT NULL,
-    "yearEnd" INTEGER,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "VehicleGeneration_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "VehicleEngine" (
-    "id" TEXT NOT NULL,
-    "generationId" TEXT NOT NULL,
-    "engineCode" TEXT NOT NULL,
-    "engineName" TEXT,
-    "fuelType" TEXT,
-    "aspiration" TEXT,
-    "cylinders" INTEGER,
-    "horsepower" INTEGER,
-    "displacementCc" INTEGER,
-    "displacementLabel" TEXT,
-    "drivetrain" TEXT,
-    "transmissionType" TEXT,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "VehicleEngine_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "VehicleTrim" (
-    "id" TEXT NOT NULL,
-    "engineId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "bodyType" TEXT,
-    "doors" INTEGER,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "VehicleTrim_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "FitmentIndex" (
-    "id" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
-    "makeId" TEXT,
-    "make" TEXT NOT NULL,
-    "modelId" TEXT,
-    "model" TEXT NOT NULL,
-    "generationId" TEXT,
-    "generation" TEXT,
-    "engineId" TEXT,
-    "engineCode" TEXT,
-    "trimId" TEXT,
-    "trim" TEXT,
-    "year" INTEGER NOT NULL,
-    "searchableText" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "FitmentIndex_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ProductFitment" (
-    "id" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
-    "level" "FitmentLevel" NOT NULL,
-    "makeId" TEXT,
-    "modelId" TEXT,
-    "generationId" TEXT,
-    "engineId" TEXT,
-    "trimId" TEXT,
-    "yearStart" INTEGER,
-    "yearEnd" INTEGER,
-    "notes" TEXT,
-    "position" TEXT,
-    "quantityRequired" INTEGER,
-    "isUniversal" BOOLEAN NOT NULL DEFAULT false,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "ProductFitment_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1120,6 +1066,129 @@ CREATE TABLE "FeedbackRating" (
 );
 
 -- CreateTable
+CREATE TABLE "Product" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "description" TEXT,
+    "brandId" TEXT NOT NULL,
+    "categoryId" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "searchKeywords" TEXT,
+    "isFeatured" BOOLEAN NOT NULL DEFAULT false,
+    "viewCount" INTEGER NOT NULL DEFAULT 0,
+    "soldCount" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "Product_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ProductVariant" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "sku" TEXT NOT NULL,
+    "price" DECIMAL(12,2) NOT NULL,
+    "costPrice" DECIMAL(12,2),
+    "weight" DOUBLE PRECISION,
+    "length" DOUBLE PRECISION,
+    "width" DOUBLE PRECISION,
+    "height" DOUBLE PRECISION,
+    "productId" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "compareAtPrice" DECIMAL(12,2),
+    "barcode" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProductVariant_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ProductMedia" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "type" "MediaType" NOT NULL,
+    "position" INTEGER NOT NULL,
+
+    CONSTRAINT "ProductMedia_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ProductSpecification" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+
+    CONSTRAINT "ProductSpecification_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ProductOEM" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "oemNumber" TEXT NOT NULL,
+
+    CONSTRAINT "ProductOEM_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ProductReview" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "title" TEXT,
+    "rating" INTEGER NOT NULL,
+    "comment" TEXT,
+    "verifiedPurchase" BOOLEAN NOT NULL DEFAULT false,
+    "isApproved" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProductReview_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ProductSearchIndex" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "searchableText" TEXT NOT NULL,
+
+    CONSTRAINT "ProductSearchIndex_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Attribute" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+
+    CONSTRAINT "Attribute_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AttributeValue" (
+    "id" TEXT NOT NULL,
+    "attributeId" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+
+    CONSTRAINT "AttributeValue_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "VariantAttribute" (
+    "id" TEXT NOT NULL,
+    "variantId" TEXT NOT NULL,
+    "valueId" TEXT NOT NULL,
+
+    CONSTRAINT "VariantAttribute_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "_LGAToShippingZone" (
     "A" TEXT NOT NULL,
     "B" TEXT NOT NULL,
@@ -1134,114 +1203,6 @@ CREATE TABLE "_ShippingZoneToState" (
 
     CONSTRAINT "_ShippingZoneToState_AB_pkey" PRIMARY KEY ("A","B")
 );
-
--- CreateIndex
-CREATE UNIQUE INDEX "DashboardSnapshot_date_key" ON "DashboardSnapshot"("date");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Role_name_key" ON "Role"("name");
-
--- CreateIndex
-CREATE INDEX "Role_parentId_idx" ON "Role"("parentId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Permission_name_key" ON "Permission"("name");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Permission_resource_action_key" ON "Permission"("resource", "action");
-
--- CreateIndex
-CREATE UNIQUE INDEX "PermissionGroup_name_key" ON "PermissionGroup"("name");
-
--- CreateIndex
-CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
-
--- CreateIndex
-CREATE UNIQUE INDEX "User_googleId_key" ON "User"("googleId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "User_verificationToken_key" ON "User"("verificationToken");
-
--- CreateIndex
-CREATE UNIQUE INDEX "User_resetPasswordToken_key" ON "User"("resetPasswordToken");
-
--- CreateIndex
-CREATE UNIQUE INDEX "RefreshToken_token_key" ON "RefreshToken"("token");
-
--- CreateIndex
-CREATE UNIQUE INDEX "IdempotencyKey_key_key" ON "IdempotencyKey"("key");
-
--- CreateIndex
-CREATE INDEX "AuditLog_userId_idx" ON "AuditLog"("userId");
-
--- CreateIndex
-CREATE INDEX "AuditLog_entity_idx" ON "AuditLog"("entity");
-
--- CreateIndex
-CREATE INDEX "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Category_slug_key" ON "Category"("slug");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Category_code_key" ON "Category"("code");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Brand_name_key" ON "Brand"("name");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Brand_slug_key" ON "Brand"("slug");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Product_slug_key" ON "Product"("slug");
-
--- CreateIndex
-CREATE INDEX "Product_brandId_idx" ON "Product"("brandId");
-
--- CreateIndex
-CREATE INDEX "Product_categoryId_idx" ON "Product"("categoryId");
-
--- CreateIndex
-CREATE INDEX "Product_isActive_idx" ON "Product"("isActive");
-
--- CreateIndex
-CREATE INDEX "Product_createdAt_idx" ON "Product"("createdAt");
-
--- CreateIndex
-CREATE UNIQUE INDEX "ProductVariant_sku_key" ON "ProductVariant"("sku");
-
--- CreateIndex
-CREATE UNIQUE INDEX "ProductVariant_barcode_key" ON "ProductVariant"("barcode");
-
--- CreateIndex
-CREATE INDEX "ProductVariant_productId_idx" ON "ProductVariant"("productId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "ProductMedia_productId_position_key" ON "ProductMedia"("productId", "position");
-
--- CreateIndex
-CREATE INDEX "ProductOEM_oemNumber_idx" ON "ProductOEM"("oemNumber");
-
--- CreateIndex
-CREATE UNIQUE INDEX "ProductOEM_productId_oemNumber_key" ON "ProductOEM"("productId", "oemNumber");
-
--- CreateIndex
-CREATE INDEX "ProductReview_productId_idx" ON "ProductReview"("productId");
-
--- CreateIndex
-CREATE INDEX "ProductReview_rating_idx" ON "ProductReview"("rating");
-
--- CreateIndex
-CREATE UNIQUE INDEX "ProductReview_userId_productId_key" ON "ProductReview"("userId", "productId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "ProductSearchIndex_productId_key" ON "ProductSearchIndex"("productId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Attribute_slug_key" ON "Attribute"("slug");
-
--- CreateIndex
-CREATE UNIQUE INDEX "VariantAttribute_variantId_valueId_key" ON "VariantAttribute"("variantId", "valueId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "VehicleMake_name_key" ON "VehicleMake"("name");
@@ -1304,22 +1265,28 @@ CREATE INDEX "VehicleTrim_isActive_idx" ON "VehicleTrim"("isActive");
 CREATE UNIQUE INDEX "VehicleTrim_engineId_name_key" ON "VehicleTrim"("engineId", "name");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "FitmentServiceConfig_name_key" ON "FitmentServiceConfig"("name");
+
+-- CreateIndex
+CREATE INDEX "FitmentTypeRule_type_idx" ON "FitmentTypeRule"("type");
+
+-- CreateIndex
+CREATE INDEX "FitmentTypeRule_level_idx" ON "FitmentTypeRule"("level");
+
+-- CreateIndex
+CREATE INDEX "FitmentResolutionLog_productId_idx" ON "FitmentResolutionLog"("productId");
+
+-- CreateIndex
+CREATE INDEX "FitmentResolutionLog_matched_idx" ON "FitmentResolutionLog"("matched");
+
+-- CreateIndex
 CREATE INDEX "FitmentIndex_productId_idx" ON "FitmentIndex"("productId");
 
 -- CreateIndex
-CREATE INDEX "FitmentIndex_make_idx" ON "FitmentIndex"("make");
+CREATE INDEX "FitmentIndex_makeId_idx" ON "FitmentIndex"("makeId");
 
 -- CreateIndex
-CREATE INDEX "FitmentIndex_model_idx" ON "FitmentIndex"("model");
-
--- CreateIndex
-CREATE INDEX "FitmentIndex_year_idx" ON "FitmentIndex"("year");
-
--- CreateIndex
-CREATE INDEX "FitmentIndex_make_model_year_idx" ON "FitmentIndex"("make", "model", "year");
-
--- CreateIndex
-CREATE INDEX "FitmentIndex_makeId_modelId_idx" ON "FitmentIndex"("makeId", "modelId");
+CREATE INDEX "FitmentIndex_modelId_idx" ON "FitmentIndex"("modelId");
 
 -- CreateIndex
 CREATE INDEX "FitmentIndex_generationId_idx" ON "FitmentIndex"("generationId");
@@ -1331,7 +1298,10 @@ CREATE INDEX "FitmentIndex_engineId_idx" ON "FitmentIndex"("engineId");
 CREATE INDEX "FitmentIndex_trimId_idx" ON "FitmentIndex"("trimId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "FitmentIndex_productId_make_model_year_engineCode_key" ON "FitmentIndex"("productId", "make", "model", "year", "engineCode");
+CREATE INDEX "FitmentIndex_year_idx" ON "FitmentIndex"("year");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "FitmentIndex_productId_makeId_modelId_generationId_engineId_key" ON "FitmentIndex"("productId", "makeId", "modelId", "generationId", "engineId", "trimId", "year");
 
 -- CreateIndex
 CREATE INDEX "ProductFitment_productId_idx" ON "ProductFitment"("productId");
@@ -1340,19 +1310,13 @@ CREATE INDEX "ProductFitment_productId_idx" ON "ProductFitment"("productId");
 CREATE INDEX "ProductFitment_level_idx" ON "ProductFitment"("level");
 
 -- CreateIndex
-CREATE INDEX "ProductFitment_makeId_idx" ON "ProductFitment"("makeId");
+CREATE INDEX "ProductFitment_type_idx" ON "ProductFitment"("type");
 
 -- CreateIndex
-CREATE INDEX "ProductFitment_modelId_idx" ON "ProductFitment"("modelId");
+CREATE INDEX "ProductFitment_makeId_modelId_idx" ON "ProductFitment"("makeId", "modelId");
 
 -- CreateIndex
-CREATE INDEX "ProductFitment_generationId_idx" ON "ProductFitment"("generationId");
-
--- CreateIndex
-CREATE INDEX "ProductFitment_engineId_idx" ON "ProductFitment"("engineId");
-
--- CreateIndex
-CREATE INDEX "ProductFitment_trimId_idx" ON "ProductFitment"("trimId");
+CREATE INDEX "ProductFitment_generationId_engineId_trimId_idx" ON "ProductFitment"("generationId", "engineId", "trimId");
 
 -- CreateIndex
 CREATE INDEX "ProductFitment_yearStart_yearEnd_idx" ON "ProductFitment"("yearStart", "yearEnd");
@@ -1361,7 +1325,64 @@ CREATE INDEX "ProductFitment_yearStart_yearEnd_idx" ON "ProductFitment"("yearSta
 CREATE INDEX "ProductFitment_isUniversal_idx" ON "ProductFitment"("isUniversal");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ProductFitment_productId_level_makeId_modelId_generationId__key" ON "ProductFitment"("productId", "level", "makeId", "modelId", "generationId", "engineId", "trimId", "yearStart", "yearEnd");
+CREATE UNIQUE INDEX "ProductFitment_productId_level_type_makeId_modelId_generati_key" ON "ProductFitment"("productId", "level", "type", "makeId", "modelId", "generationId", "engineId", "trimId", "yearStart", "yearEnd");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DashboardSnapshot_date_key" ON "DashboardSnapshot"("date");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Role_name_key" ON "Role"("name");
+
+-- CreateIndex
+CREATE INDEX "Role_parentId_idx" ON "Role"("parentId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Permission_name_key" ON "Permission"("name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Permission_resource_action_key" ON "Permission"("resource", "action");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PermissionGroup_name_key" ON "PermissionGroup"("name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_googleId_key" ON "User"("googleId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_verificationToken_key" ON "User"("verificationToken");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_resetPasswordToken_key" ON "User"("resetPasswordToken");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "RefreshToken_token_key" ON "RefreshToken"("token");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "IdempotencyKey_key_key" ON "IdempotencyKey"("key");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_userId_idx" ON "AuditLog"("userId");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_entity_idx" ON "AuditLog"("entity");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Category_slug_key" ON "Category"("slug");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Category_code_key" ON "Category"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Brand_name_key" ON "Brand"("name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Brand_slug_key" ON "Brand"("slug");
 
 -- CreateIndex
 CREATE INDEX "Conversation_customerId_idx" ON "Conversation"("customerId");
@@ -1589,6 +1610,9 @@ CREATE INDEX "Refund_status_idx" ON "Refund"("status");
 CREATE INDEX "Refund_createdAt_idx" ON "Refund"("createdAt");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "ShippingZone_name_key" ON "ShippingZone"("name");
+
+-- CreateIndex
 CREATE INDEX "ShippingZone_isActive_idx" ON "ShippingZone"("isActive");
 
 -- CreateIndex
@@ -1625,10 +1649,97 @@ CREATE INDEX "Notification_userId_isRead_idx" ON "Notification"("userId", "isRea
 CREATE INDEX "Notification_entityType_entityId_idx" ON "Notification"("entityType", "entityId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Product_slug_key" ON "Product"("slug");
+
+-- CreateIndex
+CREATE INDEX "Product_brandId_idx" ON "Product"("brandId");
+
+-- CreateIndex
+CREATE INDEX "Product_categoryId_idx" ON "Product"("categoryId");
+
+-- CreateIndex
+CREATE INDEX "Product_isActive_idx" ON "Product"("isActive");
+
+-- CreateIndex
+CREATE INDEX "Product_createdAt_idx" ON "Product"("createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductVariant_sku_key" ON "ProductVariant"("sku");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductVariant_barcode_key" ON "ProductVariant"("barcode");
+
+-- CreateIndex
+CREATE INDEX "ProductVariant_productId_idx" ON "ProductVariant"("productId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductMedia_productId_position_key" ON "ProductMedia"("productId", "position");
+
+-- CreateIndex
+CREATE INDEX "ProductOEM_oemNumber_idx" ON "ProductOEM"("oemNumber");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductOEM_productId_oemNumber_key" ON "ProductOEM"("productId", "oemNumber");
+
+-- CreateIndex
+CREATE INDEX "ProductReview_productId_idx" ON "ProductReview"("productId");
+
+-- CreateIndex
+CREATE INDEX "ProductReview_rating_idx" ON "ProductReview"("rating");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductReview_userId_productId_key" ON "ProductReview"("userId", "productId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductSearchIndex_productId_key" ON "ProductSearchIndex"("productId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Attribute_slug_key" ON "Attribute"("slug");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "VariantAttribute_variantId_valueId_key" ON "VariantAttribute"("variantId", "valueId");
+
+-- CreateIndex
 CREATE INDEX "_LGAToShippingZone_B_index" ON "_LGAToShippingZone"("B");
 
 -- CreateIndex
 CREATE INDEX "_ShippingZoneToState_B_index" ON "_ShippingZoneToState"("B");
+
+-- AddForeignKey
+ALTER TABLE "VehicleModel" ADD CONSTRAINT "VehicleModel_makeId_fkey" FOREIGN KEY ("makeId") REFERENCES "VehicleMake"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VehicleGeneration" ADD CONSTRAINT "VehicleGeneration_modelId_fkey" FOREIGN KEY ("modelId") REFERENCES "VehicleModel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VehicleEngine" ADD CONSTRAINT "VehicleEngine_generationId_fkey" FOREIGN KEY ("generationId") REFERENCES "VehicleGeneration"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VehicleTrim" ADD CONSTRAINT "VehicleTrim_engineId_fkey" FOREIGN KEY ("engineId") REFERENCES "VehicleEngine"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "FitmentResolutionLog" ADD CONSTRAINT "FitmentResolutionLog_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "FitmentIndex" ADD CONSTRAINT "FitmentIndex_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_makeId_fkey" FOREIGN KEY ("makeId") REFERENCES "VehicleMake"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_modelId_fkey" FOREIGN KEY ("modelId") REFERENCES "VehicleModel"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_generationId_fkey" FOREIGN KEY ("generationId") REFERENCES "VehicleGeneration"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_engineId_fkey" FOREIGN KEY ("engineId") REFERENCES "VehicleEngine"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_trimId_fkey" FOREIGN KEY ("trimId") REFERENCES "VehicleTrim"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Role" ADD CONSTRAINT "Role_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "Role"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1665,75 +1776,6 @@ ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_userId_fkey" FOREIGN KEY ("userI
 
 -- AddForeignKey
 ALTER TABLE "Category" ADD CONSTRAINT "Category_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Product" ADD CONSTRAINT "Product_brandId_fkey" FOREIGN KEY ("brandId") REFERENCES "Brand"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Product" ADD CONSTRAINT "Product_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductVariant" ADD CONSTRAINT "ProductVariant_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductMedia" ADD CONSTRAINT "ProductMedia_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductSpecification" ADD CONSTRAINT "ProductSpecification_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductOEM" ADD CONSTRAINT "ProductOEM_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductSearchIndex" ADD CONSTRAINT "ProductSearchIndex_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "AttributeValue" ADD CONSTRAINT "AttributeValue_attributeId_fkey" FOREIGN KEY ("attributeId") REFERENCES "Attribute"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "VariantAttribute" ADD CONSTRAINT "VariantAttribute_variantId_fkey" FOREIGN KEY ("variantId") REFERENCES "ProductVariant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "VariantAttribute" ADD CONSTRAINT "VariantAttribute_valueId_fkey" FOREIGN KEY ("valueId") REFERENCES "AttributeValue"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "VehicleModel" ADD CONSTRAINT "VehicleModel_makeId_fkey" FOREIGN KEY ("makeId") REFERENCES "VehicleMake"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "VehicleGeneration" ADD CONSTRAINT "VehicleGeneration_modelId_fkey" FOREIGN KEY ("modelId") REFERENCES "VehicleModel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "VehicleEngine" ADD CONSTRAINT "VehicleEngine_generationId_fkey" FOREIGN KEY ("generationId") REFERENCES "VehicleGeneration"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "VehicleTrim" ADD CONSTRAINT "VehicleTrim_engineId_fkey" FOREIGN KEY ("engineId") REFERENCES "VehicleEngine"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "FitmentIndex" ADD CONSTRAINT "FitmentIndex_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_makeId_fkey" FOREIGN KEY ("makeId") REFERENCES "VehicleMake"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_modelId_fkey" FOREIGN KEY ("modelId") REFERENCES "VehicleModel"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_generationId_fkey" FOREIGN KEY ("generationId") REFERENCES "VehicleGeneration"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_engineId_fkey" FOREIGN KEY ("engineId") REFERENCES "VehicleEngine"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ProductFitment" ADD CONSTRAINT "ProductFitment_trimId_fkey" FOREIGN KEY ("trimId") REFERENCES "VehicleTrim"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Conversation" ADD CONSTRAINT "Conversation_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1941,6 +1983,42 @@ ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "FeedbackRating" ADD CONSTRAINT "FeedbackRating_feedbackId_fkey" FOREIGN KEY ("feedbackId") REFERENCES "Feedback"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Product" ADD CONSTRAINT "Product_brandId_fkey" FOREIGN KEY ("brandId") REFERENCES "Brand"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Product" ADD CONSTRAINT "Product_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductVariant" ADD CONSTRAINT "ProductVariant_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductMedia" ADD CONSTRAINT "ProductMedia_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductSpecification" ADD CONSTRAINT "ProductSpecification_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductOEM" ADD CONSTRAINT "ProductOEM_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductSearchIndex" ADD CONSTRAINT "ProductSearchIndex_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AttributeValue" ADD CONSTRAINT "AttributeValue_attributeId_fkey" FOREIGN KEY ("attributeId") REFERENCES "Attribute"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VariantAttribute" ADD CONSTRAINT "VariantAttribute_variantId_fkey" FOREIGN KEY ("variantId") REFERENCES "ProductVariant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VariantAttribute" ADD CONSTRAINT "VariantAttribute_valueId_fkey" FOREIGN KEY ("valueId") REFERENCES "AttributeValue"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "_LGAToShippingZone" ADD CONSTRAINT "_LGAToShippingZone_A_fkey" FOREIGN KEY ("A") REFERENCES "LGA"("id") ON DELETE CASCADE ON UPDATE CASCADE;
