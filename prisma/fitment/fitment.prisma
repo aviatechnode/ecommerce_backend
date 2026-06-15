@@ -47,7 +47,7 @@ model FitmentTypeRule {
   priority Int @default(0)
 
   createdAt DateTime @default(now())
-
+  @@unique([type, level])
   @@index([type])
   @@index([level])
 }

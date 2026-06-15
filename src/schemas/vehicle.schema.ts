@@ -90,9 +90,9 @@ const vehicleGenerationBaseSchema = z.object({
     .max(50)
     .optional(),
 
-  yearStart: z.number().int().min(1900),
+  yearStart: z.coerce.number().int().min(1900),
 
-  yearEnd: z.number().int().optional(),
+  yearEnd: z.coerce.number().int().optional(),
 
   isActive: z.boolean().optional(),
 });
@@ -150,27 +150,9 @@ export const createVehicleEngineSchema = z.object({
   fuelType: fuelTypeSchema.optional(),
 
   aspiration: aspirationTypeSchema.optional(),
-
-  cylinders: z
-    .number()
-    .int()
-    .positive()
-    .max(24)
-    .optional(),
-
-  horsepower: z
-    .number()
-    .int()
-    .positive()
-    .max(5000)
-    .optional(),
-
-  displacementCc: z
-    .number()
-    .int()
-    .positive()
-    .max(20000)
-    .optional(),
+  cylinders: z.coerce.number().int().positive().max(24).optional(),
+  horsepower: z.coerce.number().int().positive().max(5000).optional(),
+  displacementCc: z.coerce.number().int().positive().max(20000).optional(),
 
   displacementLabel: z
     .string()
@@ -203,7 +185,8 @@ export const createVehicleTrimSchema = z.object({
 
   bodyType: bodyTypeSchema.optional(),
 
-  doors: z
+  doors: z.
+     coerce
     .number()
     .int()
     .min(2)

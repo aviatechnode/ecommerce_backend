@@ -32,6 +32,38 @@ import {
 import { z } from 'zod';
 import type { PrismaInstance, PrismaTransaction } from "../lib/prismadb.js";
 
+// ======================
+// TYPES
+// ======================
+
+// Input layer (Zod / API) – now uses string | null instead of undefined
+type VehicleHierarchyInput = {
+  makeId?: string | null;
+  modelId?: string | null;
+  generationId?: string | null;
+  engineId?: string | null;
+  trimId?: string | null;
+};
+
+// Prisma-safe boundary type (no undefined, only null)
+type PrismaVehicleInput = {
+  makeId: string | null;
+  modelId: string | null;
+  generationId: string | null;
+  engineId: string | null;
+  trimId: string | null;
+};
+
+// Internal safe runtime model (NO nulls, NO undefined)
+type VehicleResolved = {
+  makeId?: string;
+  modelId?: string;
+  generationId?: string;
+  engineId?: string;
+  trimId?: string;
+};
+
+// Strict query type (for Prisma)
 type StrictVehicleQuery = {
   makeId: string;
   modelId: string;
@@ -41,264 +73,280 @@ type StrictVehicleQuery = {
   year?: number;
 };
 
-
+// Query type (partial for flexibility)
 type VehicleQuery = Partial<StrictVehicleQuery>;
 
-
-// Define a type for the resolution query input
+// Resolution query type
 type FitmentResolutionQuery = z.infer<typeof fitmentResolutionQuerySchema>;
+
+// ======================
+// SERVICE
+// ======================
 
 export class FitmentService {
   constructor(private prisma: PrismaInstance) {}
 
-  // helper 
-  private async getEngineIdsByGeneration(
-  tx: PrismaTransaction,
-  generationId: string
-): Promise<string[]> {
-  const engines = await tx.vehicleEngine.findMany({
-    where: { generationId },
-    select: { id: true },
-  });
-  return engines.map(e => e.id);
-}
+  // ======================
+  // HELPERS
+  // ======================
 
-
-
-private scoreFitment(
-  entry: any,
-  vehicle: VehicleQuery,
-  config: FitmentServiceConfig,
-  engineSet: Set<string> | null
-) {
-  const { engineId, generationId, trimId, year } = vehicle;
-
-  let score = config.weightModel;
-  let level: FitmentLevel = "MODEL";
-
-  if (trimId && entry.trimId === trimId) {
-    level = "TRIM";
-    score = config.weightTrim;
-  } else if (engineId && entry.engineId === engineId) {
-    level = "ENGINE";
-    score = config.weightEngine;
-  } else if (
-    !engineId &&
-    engineSet &&
-    entry.engineId &&
-    engineSet.has(entry.engineId)
-  ) {
-    level = "ENGINE";
-    score = Math.floor(config.weightEngine * 0.75);
-  } else if (generationId && entry.generationId === generationId) {
-    level = "GENERATION";
-    score = config.weightGeneration;
-  }
-
-  if (year && entry.year !== year) {
-    score = config.allowCrossGenerationMatch
-      ? Math.floor(score * 0.9)
-      : 0;
-  }
-
-  if (entry.isUniversal) {
-    score = config.weightMake;
-    level = "GLOBAL";
-  }
-
-  return { score, level };
-}
-
-async checkFitment(
-  productId: string,
-  vehicle: VehicleQuery
-): Promise<{
-  fit: boolean;
-  bestScore: number;
-  level: FitmentLevel | null;
-}> {
-  const config = await this.getServiceConfig();
-
-  let engineSet: Set<string> | null = null;
-
-  if (
-    config.allowEngineFallback &&
-    !vehicle.engineId &&
-    vehicle.generationId
-  ) {
-    const engines = await this.prisma.vehicleEngine.findMany({
-      where: { generationId: vehicle.generationId },
-      select: { id: true },
-    });
-
-    engineSet = new Set(engines.map((e) => e.id));
-  }
-
-  // ✅ SAFE WHERE BUILDING (strict-mode compliant)
-  const fitments = await this.prisma.productFitment.findMany({
-    where: {
-      productId,
-
-      ...(vehicle.makeId ? { makeId: vehicle.makeId } : {}),
-      ...(vehicle.modelId ? { modelId: vehicle.modelId } : {}),
-
-      ...(vehicle.generationId
-        ? { generationId: vehicle.generationId }
-        : {}),
-
-      ...(vehicle.engineId
-        ? { engineId: vehicle.engineId }
-        : engineSet
-        ? { engineId: { in: [...engineSet] } }
-        : {}),
-
-      ...(vehicle.trimId ? { trimId: vehicle.trimId } : {}),
-
-      ...(vehicle.year
-        ? {
-            yearStart: { lte: vehicle.year },
-            yearEnd: { gte: vehicle.year },
-          }
-        : {}),
-    },
-  });
-
-  if (!fitments.length) {
-    return { fit: false, bestScore: 0, level: null };
-  }
-
-  let best = {
-    score: 0,
-    level: null as FitmentLevel | null,
-  };
-
-  for (const f of fitments) {
-    const scored = this.scoreFitment(f, vehicle, config, engineSet);
-
-    if (scored.score > best.score) {
-      best = scored;
+  /**
+   * Normalizes Prisma's `null` values to `null` (keeps null) and
+   * converts API `undefined` to `null` for Prisma compatibility.
+   * This is the key fix for strict optional property mismatches.
+   */
+  private normalizeVehicleInput(
+    input: {
+      makeId?: string | null | undefined;
+      modelId?: string | null | undefined;
+      generationId?: string | null | undefined;
+      engineId?: string | null | undefined;
+      trimId?: string | null | undefined;
     }
+  ): PrismaVehicleInput {
+    return {
+      makeId: input.makeId ?? null,
+      modelId: input.modelId ?? null,
+      generationId: input.generationId ?? null,
+      engineId: input.engineId ?? null,
+      trimId: input.trimId ?? null,
+    };
   }
 
-  return {
-    fit: best.score > 0,
-    bestScore: best.score,
-    level: best.level,
-  };
-}
-
-async searchFitments(
-  vehicle: VehicleQuery & { productId?: string; oemNumbers?: string[] }
-): Promise<
-  Array<{
-    productId: string;
-    score: number;
-    level: FitmentLevel;
-    type: FitmentType;
-  }>
-> {
-  const config = await this.getServiceConfig();
-
-  let engineSet: Set<string> | null = null;
-
-  if (
-    config.allowEngineFallback &&
-    !vehicle.engineId &&
-    vehicle.generationId
-  ) {
-    const engines = await this.prisma.vehicleEngine.findMany({
-      where: { generationId: vehicle.generationId },
+  private async getEngineIdsByGeneration(
+    tx: PrismaTransaction,
+    generationId: string
+  ): Promise<string[]> {
+    const engines = await tx.vehicleEngine.findMany({
+      where: { generationId },
       select: { id: true },
     });
-
-    engineSet = new Set(engines.map((e) => e.id));
+    return engines.map((e) => e.id);
   }
 
-  // =========================
-  // INDEX RESULTS
-  // =========================
-  const indexResults = config.enableFitmentIndexing
-    ? await this.resolveViaIndex(vehicle as any, config)
-    : [];
+  private scoreFitment(
+    entry: any,
+    vehicle: VehicleQuery,
+    config: FitmentServiceConfig,
+    engineSet: Set<string> | null
+  ) {
+    const { engineId, generationId, trimId, year } = vehicle;
 
-  // =========================
-  // DIRECT RESULTS
-  // =========================
-  const directResults = await this.resolveViaDirectQuery(
-    vehicle as any,
-    config
-  );
+    let score = config.weightModel;
+    let level: FitmentLevel = "MODEL";
 
-  // =========================
-  // OEM RESULTS (🔥 NEW FIX)
-  // =========================
-  const oemResults =
-    vehicle.productId && vehicle.oemNumbers?.length
-      ? await this.resolveOEMMatches(
-          vehicle.productId,
-          vehicle.oemNumbers
-        )
-      : [];
+    if (trimId && entry.trimId === trimId) {
+      level = "TRIM";
+      score = config.weightTrim;
+    } else if (engineId && entry.engineId === engineId) {
+      level = "ENGINE";
+      score = config.weightEngine;
+    } else if (
+      !engineId &&
+      engineSet &&
+      entry.engineId &&
+      engineSet.has(entry.engineId)
+    ) {
+      level = "ENGINE";
+      score = Math.floor(config.weightEngine * 0.75);
+    } else if (generationId && entry.generationId === generationId) {
+      level = "GENERATION";
+      score = config.weightGeneration;
+    }
 
-  // convert OEM matches into scoreable format
-  const normalizedOEM = oemResults.map((f) => ({
-    productId: f.productId,
-    score: config.weightMake, // OEM = strong match signal
-    level: "OEM_MATCH" as FitmentLevel,
-    type: f.type ?? ("OEM_MATCH" as FitmentType),
-  }));
+    if (year && entry.year !== year) {
+      score = config.allowCrossGenerationMatch
+        ? Math.floor(score * 0.9)
+        : 0;
+    }
 
-  // =========================
-  // MERGE ALL SOURCES
-  // =========================
-  const allFitments = [
-    ...indexResults,
-    ...directResults,
-    ...normalizedOEM,
-  ];
+    if (entry.isUniversal) {
+      score = config.weightMake;
+      level = "GLOBAL";
+    }
 
-  if (!allFitments.length) return [];
+    return { score, level };
+  }
 
-  const results = new Map<
-    string,
-    {
+  // ======================
+  // CORE METHODS
+  // ======================
+
+  async checkFitment(
+    productId: string,
+    vehicle: VehicleQuery
+  ): Promise<{
+    fit: boolean;
+    bestScore: number;
+    level: FitmentLevel | null;
+  }> {
+    const config = await this.getServiceConfig();
+
+    let engineSet: Set<string> | null = null;
+
+    if (
+      config.allowEngineFallback &&
+      !vehicle.engineId &&
+      vehicle.generationId
+    ) {
+      const engines = await this.prisma.vehicleEngine.findMany({
+        where: { generationId: vehicle.generationId },
+        select: { id: true },
+      });
+
+      engineSet = new Set(engines.map((e) => e.id));
+    }
+
+    // ✅ SAFE WHERE BUILDING (strict-mode compliant)
+    const fitments = await this.prisma.productFitment.findMany({
+      where: {
+        productId,
+        ...(vehicle.makeId ? { makeId: vehicle.makeId } : {}),
+        ...(vehicle.modelId ? { modelId: vehicle.modelId } : {}),
+        ...(vehicle.generationId ? { generationId: vehicle.generationId } : {}),
+        ...(vehicle.engineId
+          ? { engineId: vehicle.engineId }
+          : engineSet
+          ? { engineId: { in: [...engineSet] } }
+          : {}),
+        ...(vehicle.trimId ? { trimId: vehicle.trimId } : {}),
+        ...(vehicle.year
+          ? {
+              yearStart: { lte: vehicle.year },
+              yearEnd: { gte: vehicle.year },
+            }
+          : {}),
+      },
+    });
+
+    if (!fitments.length) {
+      return { fit: false, bestScore: 0, level: null };
+    }
+
+    let best = {
+      score: 0,
+      level: null as FitmentLevel | null,
+    };
+
+    for (const f of fitments) {
+      const scored = this.scoreFitment(f, vehicle, config, engineSet);
+
+      if (scored.score > best.score) {
+        best = scored;
+      }
+    }
+
+    return {
+      fit: best.score > 0,
+      bestScore: best.score,
+      level: best.level,
+    };
+  }
+
+  async searchFitments(
+    vehicle: VehicleQuery & { productId?: string; oemNumbers?: string[] }
+  ): Promise<
+    Array<{
       productId: string;
       score: number;
       level: FitmentLevel;
       type: FitmentType;
-    }
-  >();
+    }>
+  > {
+    const config = await this.getServiceConfig();
 
-  for (const f of allFitments) {
-    const existing = results.get(f.productId);
+    let engineSet: Set<string> | null = null;
 
-    if (!existing || f.score > existing.score) {
-      results.set(f.productId, {
-        productId: f.productId,
-        score: f.score,
-        level: f.level,
-        type: f.type,
+    if (
+      config.allowEngineFallback &&
+      !vehicle.engineId &&
+      vehicle.generationId
+    ) {
+      const engines = await this.prisma.vehicleEngine.findMany({
+        where: { generationId: vehicle.generationId },
+        select: { id: true },
       });
+
+      engineSet = new Set(engines.map((e) => e.id));
     }
+
+    // =========================
+    // INDEX RESULTS
+    // =========================
+    const indexResults = config.enableFitmentIndexing
+      ? await this.resolveViaIndex(vehicle as any, config)
+      : [];
+
+    // =========================
+    // DIRECT RESULTS
+    // =========================
+    const directResults = await this.resolveViaDirectQuery(
+      vehicle as any,
+      config
+    );
+
+    // =========================
+    // OEM RESULTS
+    // =========================
+    const oemResults =
+      vehicle.productId && vehicle.oemNumbers?.length
+        ? await this.resolveOEMMatches(
+            vehicle.productId,
+            vehicle.oemNumbers
+          )
+        : [];
+
+    // Convert OEM matches into scoreable format
+    const normalizedOEM = oemResults.map((f) => ({
+      productId: f.productId,
+      score: config.weightMake, // OEM = strong match signal
+      level: "OEM_MATCH" as FitmentLevel,
+      type: f.type ?? ("OEM_MATCH" as FitmentType),
+    }));
+
+    // =========================
+    // MERGE ALL SOURCES
+    // =========================
+    const allFitments = [...indexResults, ...directResults, ...normalizedOEM];
+
+    if (!allFitments.length) return [];
+
+    const results = new Map<
+      string,
+      {
+        productId: string;
+        score: number;
+        level: FitmentLevel;
+        type: FitmentType;
+      }
+    >();
+
+    for (const f of allFitments) {
+      const existing = results.get(f.productId);
+
+      if (!existing || f.score > existing.score) {
+        results.set(f.productId, {
+          productId: f.productId,
+          score: f.score,
+          level: f.level,
+          type: f.type,
+        });
+      }
+    }
+
+    return [...results.values()].sort((a, b) => b.score - a.score);
   }
 
-  return [...results.values()].sort((a, b) => b.score - a.score);
-}
   // ======================
   // SERVICE CONFIG
   // ======================
-  /**
-   * Fetches the FitmentServiceConfig. Throws if not found.
-   */
+
   async getServiceConfig(): Promise<FitmentServiceConfig> {
     const config = await this.prisma.fitmentServiceConfig.findFirst();
     if (!config) throw new Error('No FitmentServiceConfig found. Please seed one.');
     return config;
   }
 
-  /**
-   * Updates the FitmentServiceConfig.
-   */
   async updateServiceConfig(
     data: z.infer<typeof updateFitmentServiceConfigSchema>
   ): Promise<FitmentServiceConfig> {
@@ -523,114 +571,132 @@ async searchFitments(
   }
 
   async createProductFitment(
-  data: z.infer<typeof createProductFitmentSchema>
-): Promise<ProductFitment> {
-  const validated = createProductFitmentSchema.parse(data);
+    data: z.infer<typeof createProductFitmentSchema>
+  ): Promise<ProductFitment> {
+    const validated = createProductFitmentSchema.parse(data);
 
-  const createData: Prisma.ProductFitmentCreateInput = {
-    product: { connect: { id: validated.productId } },
-    level: validated.level,
-    type: validated.type,
-    ...(validated.makeId !== undefined && { makeId: validated.makeId }),
-    ...(validated.modelId !== undefined && { modelId: validated.modelId }),
-    ...(validated.generationId !== undefined && { generationId: validated.generationId }),
-    ...(validated.engineId !== undefined && { engineId: validated.engineId }),
-    ...(validated.trimId !== undefined && { trimId: validated.trimId }),
-    ...(validated.yearStart !== undefined && { yearStart: validated.yearStart }),
-    ...(validated.yearEnd !== undefined && { yearEnd: validated.yearEnd }),
-    ...(validated.notes !== undefined && { notes: validated.notes }),
-    ...(validated.position !== undefined && { position: validated.position }),
-    ...(validated.quantityRequired !== undefined && { quantityRequired: validated.quantityRequired }),
-    ...(validated.isUniversal !== undefined && { isUniversal: validated.isUniversal }),
-    ...(validated.isVerified !== undefined && { isVerified: validated.isVerified }),
-    ...(validated.confidenceScore !== undefined && { confidenceScore: validated.confidenceScore }),
-  };
+    // Convert API undefined → null for Prisma safety
+    const normalizedInput = this.normalizeVehicleInput(validated);
 
-  return this.prisma.$transaction(async (tx) => {
-    // ✅ IMPORTANT: enforce vehicle hierarchy integrity BEFORE insert
-    await this.validateVehicleHierarchy(tx, validated);
+    const createData: Prisma.ProductFitmentCreateInput = {
+      product: { connect: { id: validated.productId } },
+      level: validated.level,
+      type: validated.type,
+      ...(normalizedInput.makeId && { make: { connect: { id: normalizedInput.makeId } } }),
+      ...(normalizedInput.modelId && { model: { connect: { id: normalizedInput.modelId } } }),
+      ...(normalizedInput.generationId && { generation: { connect: { id: normalizedInput.generationId } } }),
+      ...(normalizedInput.engineId && { engine: { connect: { id: normalizedInput.engineId } } }),
+      ...(normalizedInput.trimId && { trim: { connect: { id: normalizedInput.trimId } } }),
+      ...(validated.yearStart !== undefined && { yearStart: validated.yearStart }),
+      ...(validated.yearEnd !== undefined && { yearEnd: validated.yearEnd }),
+      ...(validated.notes !== undefined && { notes: validated.notes }),
+      ...(validated.position !== undefined && { position: validated.position }),
+      ...(validated.quantityRequired !== undefined && { quantityRequired: validated.quantityRequired }),
+      ...(validated.isUniversal !== undefined && { isUniversal: validated.isUniversal }),
+      ...(validated.isVerified !== undefined && { isVerified: validated.isVerified }),
+      ...(validated.confidenceScore !== undefined && { confidenceScore: validated.confidenceScore }),
+    };
 
-    const fitment = await tx.productFitment.create({ data: createData });
+    // Run the write transaction with increased timeout (15 seconds)
+    const fitment = await this.prisma.$transaction(
+      async (tx) => {
+        await this.validateVehicleHierarchy(tx, normalizedInput);
+        return tx.productFitment.create({ data: createData });
+      },
+      { timeout: 15000 } // 15 seconds timeout
+    );
 
-    const config = await tx.fitmentServiceConfig.findFirst();
-    if (config?.enableFitmentIndexing) {
-      await this.rebuildFitmentIndexForProduct(tx, fitment.productId);
-    }
+    // Rebuild index AFTER commit (long-running, separate transaction)
+    await this.rebuildFitmentIndexForProductAsync(fitment.productId);
 
     return fitment;
-  });
-}
+  }
 
   async updateProductFitment(
-  id: string,
-  data: z.infer<typeof updateProductFitmentSchema>
-): Promise<ProductFitment> {
-  const validated = updateProductFitmentSchema.parse(data);
+    id: string,
+    data: z.infer<typeof updateProductFitmentSchema>
+  ): Promise<ProductFitment> {
+    const validated = updateProductFitmentSchema.parse(data);
 
-  return this.prisma.$transaction(async (tx) => {
-  const existing = await tx.productFitment.findUnique({
-    where: { id },
-  });
+    // Run the update transaction with increased timeout (15 seconds)
+    const fitment = await this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.productFitment.findUnique({
+          where: { id },
+        });
 
-  if (!existing) throw new Error("ProductFitment not found");
+        if (!existing) throw new Error("ProductFitment not found");
 
-  const merged = {
-    ...existing,
-    ...validated,
-  };
+        // Normalize existing Prisma data (null stays null, no undefined)
+        const normalizedExisting = this.normalizeVehicleInput({
+          makeId: existing.makeId,
+          modelId: existing.modelId,
+          generationId: existing.generationId,
+          engineId: existing.engineId,
+          trimId: existing.trimId,
+        });
 
-  createProductFitmentSchema.parse(merged);
+        // Safe merging: validated data takes precedence, then existing (both are string | null)
+        const vehicleForValidation: VehicleHierarchyInput = {
+          makeId: validated.makeId ?? normalizedExisting.makeId,
+          modelId: validated.modelId ?? normalizedExisting.modelId,
+          generationId: validated.generationId ?? normalizedExisting.generationId,
+          engineId: validated.engineId ?? normalizedExisting.engineId,
+          trimId: validated.trimId ?? normalizedExisting.trimId,
+        };
 
-  // 🔥 NEW: validate hierarchy BEFORE update
-  await this.validateVehicleHierarchy(tx, merged);
+        await this.validateVehicleHierarchy(tx, vehicleForValidation);
 
-  const updateData: Prisma.ProductFitmentUpdateInput = {
-    ...(validated.productId !== undefined && { productId: validated.productId }),
-    ...(validated.level !== undefined && { level: validated.level }),
-    ...(validated.type !== undefined && { type: validated.type }),
+        const updateData: Prisma.ProductFitmentUpdateInput = {
+          ...(validated.productId !== undefined && { product: { connect: { id: validated.productId } } }),
+          ...(validated.level !== undefined && { level: validated.level }),
+          ...(validated.type !== undefined && { type: validated.type }),
+          ...(validated.makeId !== undefined && { make: { connect: { id: validated.makeId } } }),
+          ...(validated.modelId !== undefined && { model: { connect: { id: validated.modelId } } }),
+          ...(validated.generationId !== undefined && { generation: { connect: { id: validated.generationId } } }),
+          ...(validated.engineId !== undefined && { engine: { connect: { id: validated.engineId } } }),
+          ...(validated.trimId !== undefined && { trim: { connect: { id: validated.trimId } } }),
+          ...(validated.yearStart !== undefined && { yearStart: validated.yearStart }),
+          ...(validated.yearEnd !== undefined && { yearEnd: validated.yearEnd }),
+          ...(validated.notes !== undefined && { notes: validated.notes }),
+          ...(validated.position !== undefined && { position: validated.position }),
+          ...(validated.quantityRequired !== undefined && { quantityRequired: validated.quantityRequired }),
+          ...(validated.isUniversal !== undefined && { isUniversal: validated.isUniversal }),
+          ...(validated.isVerified !== undefined && { isVerified: validated.isVerified }),
+          ...(validated.confidenceScore !== undefined && { confidenceScore: validated.confidenceScore }),
+        };
 
-    ...(validated.makeId !== undefined && { makeId: validated.makeId }),
-    ...(validated.modelId !== undefined && { modelId: validated.modelId }),
-    ...(validated.generationId !== undefined && { generationId: validated.generationId }),
-    ...(validated.engineId !== undefined && { engineId: validated.engineId }),
-    ...(validated.trimId !== undefined && { trimId: validated.trimId }),
+        return tx.productFitment.update({
+          where: { id },
+          data: updateData,
+        });
+      },
+      { timeout: 15000 }
+    );
 
-    ...(validated.yearStart !== undefined && { yearStart: validated.yearStart }),
-    ...(validated.yearEnd !== undefined && { yearEnd: validated.yearEnd }),
-
-    ...(validated.notes !== undefined && { notes: validated.notes }),
-    ...(validated.position !== undefined && { position: validated.position }),
-    ...(validated.quantityRequired !== undefined && { quantityRequired: validated.quantityRequired }),
-
-    ...(validated.isUniversal !== undefined && { isUniversal: validated.isUniversal }),
-    ...(validated.isVerified !== undefined && { isVerified: validated.isVerified }),
-    ...(validated.confidenceScore !== undefined && { confidenceScore: validated.confidenceScore }),
-  };
-
-  const fitment = await tx.productFitment.update({
-      where: { id },
-      data: updateData,
-    });
-
-    const config = await tx.fitmentServiceConfig.findFirst();
-    if (config?.enableFitmentIndexing) {
-      await this.rebuildFitmentIndexForProduct(tx, fitment.productId);
-    }
+    // Rebuild index AFTER commit
+    await this.rebuildFitmentIndexForProductAsync(fitment.productId);
 
     return fitment;
-  });
-}
+  }
+
   async deleteProductFitment(id: string): Promise<{ success: boolean }> {
-    return this.prisma.$transaction(async (tx) => {
-      const fitment = await tx.productFitment.findUnique({ where: { id } });
-      if (!fitment) throw new Error('ProductFitment not found');
-      await tx.productFitment.delete({ where: { id } });
-      const config = await tx.fitmentServiceConfig.findFirst();
-      if (config?.enableFitmentIndexing) {
-        await this.rebuildFitmentIndexForProduct(tx, fitment.productId);
-      }
-      return { success: true };
-    });
+    // Run the delete transaction with increased timeout (15 seconds)
+    const productId = await this.prisma.$transaction(
+      async (tx) => {
+        const fitment = await tx.productFitment.findUnique({ where: { id } });
+        if (!fitment) throw new Error('ProductFitment not found');
+        const pid = fitment.productId;
+        await tx.productFitment.delete({ where: { id } });
+        return pid;
+      },
+      { timeout: 15000 }
+    );
+
+    // Rebuild index AFTER commit
+    await this.rebuildFitmentIndexForProductAsync(productId);
+
+    return { success: true };
   }
 
   // ======================
@@ -643,30 +709,29 @@ async searchFitments(
     const validated = createProductFitmentOEMSchema.parse(data);
 
     const createData: Prisma.ProductFitmentOEMCreateInput = {
-      productFitment: { connect: {id: validated.productFitmentId }},
-      oemReference: { connect: { id: validated.oemReferenceId }},
+      productFitment: { connect: { id: validated.productFitmentId } },
+      oemReference: { connect: { id: validated.oemReferenceId } },
     };
 
     return this.prisma.productFitmentOEM.create({ data: createData });
   }
 
-  // reserved for production logic
-private async resolveOEMMatches(productId: string, oemNumbers: string[]) {
-  if (!oemNumbers.length) return [];
+  private async resolveOEMMatches(productId: string, oemNumbers: string[]) {
+    if (!oemNumbers.length) return [];
 
-  return this.prisma.productFitment.findMany({
-    where: {
-      productId,
-      oemReferences: {
-        some: {
-          oemReference: {
-            partNumber: { in: oemNumbers },
+    return this.prisma.productFitment.findMany({
+      where: {
+        productId,
+        oemReferences: {
+          some: {
+            oemReference: {
+              partNumber: { in: oemNumbers },
+            },
           },
         },
       },
-    },
-  });
-}
+    });
+  }
 
   async removeOEMReferenceFromFitment(
     productFitmentId: string,
@@ -687,8 +752,8 @@ private async resolveOEMMatches(productId: string, oemNumbers: string[]) {
     const validated = createProductFitmentCrossReferenceSchema.parse(data);
 
     const createData: Prisma.ProductFitmentCrossReferenceCreateInput = {
-      productFitment: { connect: {id: validated.productFitmentId }},
-      crossReference: { connect: {id: validated.crossReferenceId}},
+      productFitment: { connect: { id: validated.productFitmentId } },
+      crossReference: { connect: { id: validated.crossReferenceId } },
     };
 
     return this.prisma.productFitmentCrossReference.create({ data: createData });
@@ -707,6 +772,10 @@ private async resolveOEMMatches(productId: string, oemNumbers: string[]) {
   // FITMENT INDEX
   // ======================
 
+  /**
+   * Rebuilds the fitment index for a single product.
+   * This method is transaction‑safe and can be called with any Prisma transaction client.
+   */
   private async rebuildFitmentIndexForProduct(
     tx: PrismaTransaction,
     productId: string
@@ -759,309 +828,325 @@ private async resolveOEMMatches(productId: string, oemNumbers: string[]) {
     }
   }
 
+  /**
+   * Async wrapper that rebuilds the fitment index in its own transaction.
+   * This prevents long index rebuilds from blocking the main write transaction.
+   * Errors are logged but never thrown – index rebuild is non‑critical.
+   */
+  private async rebuildFitmentIndexForProductAsync(productId: string): Promise<void> {
+    try {
+      await this.prisma.$transaction(
+        async (tx) => {
+          await this.rebuildFitmentIndexForProduct(tx, productId);
+        },
+        { timeout: 30000 } // 30 seconds for index rebuild (can be longer)
+      );
+    } catch (error) {
+      console.error(`Failed to rebuild fitment index for product ${productId}:`, error);
+      // Do not rethrow – the fitment operation already succeeded.
+    }
+  }
+
   async rebuildFullFitmentIndex(): Promise<void> {
     const products = await this.prisma.product.findMany({ select: { id: true } });
-    await this.prisma.$transaction(async (tx) => {
-      await tx.fitmentIndex.deleteMany();
-      for (const { id } of products) {
-        await this.rebuildFitmentIndexForProduct(tx, id);
-      }
-    });
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.fitmentIndex.deleteMany();
+        for (const { id } of products) {
+          await this.rebuildFitmentIndexForProduct(tx, id);
+        }
+      },
+      { timeout: 300000 } // 5 minutes for full rebuild
+    );
   }
+
+  // ======================
+  // RESOLUTION
+  // ======================
 
   async resolveFitment(query: FitmentResolutionQuery) {
-  const validated = fitmentResolutionQuerySchema.parse(query);
+    const validated = fitmentResolutionQuerySchema.parse(query);
 
-  // ✅ STRICT SAFE NORMALIZATION (fixes exactOptionalPropertyTypes issue)
-  const safeQuery: VehicleQuery & { productId: string; oemNumbers?: string[] } = {
-    productId: validated.productId,
-
-    ...(validated.makeId ? { makeId: validated.makeId } : {}),
-    ...(validated.modelId ? { modelId: validated.modelId } : {}),
-    ...(validated.generationId ? { generationId: validated.generationId } : {}),
-    ...(validated.engineId ? { engineId: validated.engineId } : {}),
-    ...(validated.trimId ? { trimId: validated.trimId } : {}),
-    ...(validated.year ? { year: validated.year } : {}),
-    ...(validated.oemNumbers?.length ? { oemNumbers: validated.oemNumbers } : {}),
-  };
-
-  const log = await this.prisma.fitmentResolutionLog.create({
-    data: {
-      product: { connect: { id: validated.productId } },
-      inputMake: validated.makeId ?? null,
-      inputModel: validated.modelId ?? null,
-      inputGeneration: validated.generationId ?? null,
-      inputEngine: validated.engineId ?? null,
-      inputTrim: validated.trimId ?? null,
-      inputYear: validated.year ?? null,
-      matched: false,
-    },
-  });
-
-  try {
-    // ✅ now SAFE to pass
-    const matches = await this.searchFitments(safeQuery);
-
-    const topMatches = matches.slice(0, 10);
-
-    await this.prisma.fitmentResolutionLog.update({
-      where: { id: log.id },
-      data: {
-        matched: topMatches.length > 0,
-        matchedLevel: topMatches[0]?.level ?? null,
-        matchedType: topMatches[0]?.type ?? null,
-        score: topMatches[0]?.score ?? null,
-        resolutionPath: JSON.stringify(topMatches),
-      },
-    });
-
-    const products = await this.prisma.product.findMany({
-      where: {
-        id: {
-          in: [...new Set(topMatches.map((m) => m.productId))],
-        },
-      },
-    });
-
-    const map = new Map(products.map((p) => [p.id, p]));
-
-    return {
-      matches: topMatches.map((m) => ({
-        product: map.get(m.productId) ?? null,
-        score: m.score,
-        level: m.level,
-        type: m.type,
-      })),
+    // STRICT SAFE NORMALIZATION (fixes exactOptionalPropertyTypes issue)
+    const safeQuery: VehicleQuery & { productId: string; oemNumbers?: string[] } = {
+      productId: validated.productId,
+      ...(validated.makeId ? { makeId: validated.makeId } : {}),
+      ...(validated.modelId ? { modelId: validated.modelId } : {}),
+      ...(validated.generationId ? { generationId: validated.generationId } : {}),
+      ...(validated.engineId ? { engineId: validated.engineId } : {}),
+      ...(validated.trimId ? { trimId: validated.trimId } : {}),
+      ...(validated.year ? { year: validated.year } : {}),
+      ...(validated.oemNumbers?.length ? { oemNumbers: validated.oemNumbers } : {}),
     };
-  } catch (error) {
-    await this.prisma.fitmentResolutionLog.update({
-      where: { id: log.id },
+
+    const log = await this.prisma.fitmentResolutionLog.create({
       data: {
-        notes: `Resolution error: ${String(error)}`,
+        product: { connect: { id: validated.productId } },
+        inputMake: validated.makeId ?? null,
+        inputModel: validated.modelId ?? null,
+        inputGeneration: validated.generationId ?? null,
+        inputEngine: validated.engineId ?? null,
+        inputTrim: validated.trimId ?? null,
+        inputYear: validated.year ?? null,
+        matched: false,
       },
     });
 
-    throw error;
+    try {
+      const matches = await this.searchFitments(safeQuery);
+
+      const topMatches = matches.slice(0, 10);
+
+      await this.prisma.fitmentResolutionLog.update({
+        where: { id: log.id },
+        data: {
+          matched: topMatches.length > 0,
+          matchedLevel: topMatches[0]?.level ?? null,
+          matchedType: topMatches[0]?.type ?? null,
+          score: topMatches[0]?.score ?? null,
+          resolutionPath: JSON.stringify(topMatches),
+        },
+      });
+
+      const products = await this.prisma.product.findMany({
+        where: {
+          id: {
+            in: [...new Set(topMatches.map((m) => m.productId))],
+          },
+        },
+      });
+
+      const map = new Map(products.map((p) => [p.id, p]));
+
+      return {
+        matches: topMatches.map((m) => ({
+          product: map.get(m.productId) ?? null,
+          score: m.score,
+          level: m.level,
+          type: m.type,
+        })),
+      };
+    } catch (error) {
+      await this.prisma.fitmentResolutionLog.update({
+        where: { id: log.id },
+        data: {
+          notes: `Resolution error: ${String(error)}`,
+        },
+      });
+
+      throw error;
+    }
   }
-}
 
   private async resolveViaIndex(
-  query: FitmentResolutionQuery,
-  config: FitmentServiceConfig
-): Promise<
-  Array<{
-    productId: string;
-    score: number;
-    level: FitmentLevel;
-    type: FitmentType;
-  }>
-> {
-  const {
-    makeId,
-    modelId,
-    generationId,
-    engineId,
-    trimId,
-    year,
-    productId,
-  } = query;
-
-  if (!makeId || !modelId) {
-    return [];
-  }
-
-  let expandedEngineIds: string[] | null = null;
-  let engineSet: Set<string> | null = null;
-
-  if (config.allowEngineFallback && !engineId && generationId) {
-    const engines = await this.prisma.vehicleEngine.findMany({
-      where: { generationId },
-      select: { id: true },
-    });
-
-    expandedEngineIds = engines.map((e) => e.id);
-    engineSet = new Set(expandedEngineIds);
-  }
-
-  // ✅ SAFE WHERE BUILD (strict-mode compliant)
-  const indexEntries = await this.prisma.fitmentIndex.findMany({
-    where: {
-      productId,
-      makeId,
-      modelId,
-
-      ...(generationId ? { generationId } : {}),
-
-      ...(engineId
-        ? { engineId }
-        : expandedEngineIds
-        ? { engineId: { in: expandedEngineIds } }
-        : {}),
-
-      ...(trimId ? { trimId } : {}),
-
-      ...(year ? { year } : {}),
-    },
-  });
-
-  if (!indexEntries.length) return [];
-
-  const results = new Map<
-    string,
-    {
+    query: FitmentResolutionQuery,
+    config: FitmentServiceConfig
+  ): Promise<
+    Array<{
       productId: string;
       score: number;
       level: FitmentLevel;
       type: FitmentType;
-    }
-  >();
+    }>
+  > {
+    const {
+      makeId,
+      modelId,
+      generationId,
+      engineId,
+      trimId,
+      year,
+      productId,
+    } = query;
 
-  for (const entry of indexEntries) {
-    let score = config.weightModel;
-    let level: FitmentLevel = "MODEL";
-    const type: FitmentType = "EXACT";
-
-    if (trimId && entry.trimId === trimId) {
-      level = "TRIM";
-      score = config.weightTrim;
-    } else if (engineId && entry.engineId === engineId) {
-      level = "ENGINE";
-      score = config.weightEngine;
-    } else if (
-      !engineId &&
-      engineSet &&
-      entry.engineId &&
-      engineSet.has(entry.engineId)
-    ) {
-      level = "ENGINE";
-      score = Math.floor(config.weightEngine * 0.75);
-    } else if (generationId && entry.generationId === generationId) {
-      level = "GENERATION";
-      score = config.weightGeneration;
+    if (!makeId || !modelId) {
+      return [];
     }
 
-    if (year && entry.year !== year) {
-      score = config.allowCrossGenerationMatch
-        ? Math.floor(score * 0.9)
-        : 0;
+    let expandedEngineIds: string[] | null = null;
+    let engineSet: Set<string> | null = null;
+
+    if (config.allowEngineFallback && !engineId && generationId) {
+      const engines = await this.prisma.vehicleEngine.findMany({
+        where: { generationId },
+        select: { id: true },
+      });
+
+      expandedEngineIds = engines.map((e) => e.id);
+      engineSet = new Set(expandedEngineIds);
     }
 
-    const existing = results.get(entry.productId);
+    // SAFE WHERE BUILD (strict-mode compliant)
+    const indexEntries = await this.prisma.fitmentIndex.findMany({
+      where: {
+        productId,
+        makeId,
+        modelId,
+        ...(generationId ? { generationId } : {}),
+        ...(engineId
+          ? { engineId }
+          : expandedEngineIds
+          ? { engineId: { in: expandedEngineIds } }
+          : {}),
+        ...(trimId ? { trimId } : {}),
+        ...(year ? { year } : {}),
+      },
+    });
 
-    if (!existing || score > existing.score) {
-      results.set(entry.productId, {
-        productId: entry.productId,
+    if (!indexEntries.length) return [];
+
+    const results = new Map<
+      string,
+      {
+        productId: string;
+        score: number;
+        level: FitmentLevel;
+        type: FitmentType;
+      }
+    >();
+
+    for (const entry of indexEntries) {
+      let score = config.weightModel;
+      let level: FitmentLevel = "MODEL";
+      const type: FitmentType = "EXACT";
+
+      if (trimId && entry.trimId === trimId) {
+        level = "TRIM";
+        score = config.weightTrim;
+      } else if (engineId && entry.engineId === engineId) {
+        level = "ENGINE";
+        score = config.weightEngine;
+      } else if (
+        !engineId &&
+        engineSet &&
+        entry.engineId &&
+        engineSet.has(entry.engineId)
+      ) {
+        level = "ENGINE";
+        score = Math.floor(config.weightEngine * 0.75);
+      } else if (generationId && entry.generationId === generationId) {
+        level = "GENERATION";
+        score = config.weightGeneration;
+      }
+
+      if (year && entry.year !== year) {
+        score = config.allowCrossGenerationMatch
+          ? Math.floor(score * 0.9)
+          : 0;
+      }
+
+      const existing = results.get(entry.productId);
+
+      if (!existing || score > existing.score) {
+        results.set(entry.productId, {
+          productId: entry.productId,
+          score,
+          level,
+          type,
+        });
+      }
+    }
+
+    return Array.from(results.values());
+  }
+
+  private async resolveViaDirectQuery(
+    query: FitmentResolutionQuery,
+    config: FitmentServiceConfig
+  ): Promise<
+    Array<{
+      productId: string;
+      score: number;
+      level: FitmentLevel;
+      type: FitmentType;
+    }>
+  > {
+    const {
+      makeId,
+      modelId,
+      generationId,
+      engineId,
+      trimId,
+      year,
+    } = query;
+
+    if (!makeId || !modelId) {
+      return [];
+    }
+
+    let expandedEngineIds: string[] | null = null;
+    let engineSet: Set<string> | null = null;
+
+    if (config.allowEngineFallback && !engineId && generationId) {
+      const engines = await this.prisma.vehicleEngine.findMany({
+        where: { generationId },
+        select: { id: true },
+      });
+
+      expandedEngineIds = engines.map((e) => e.id);
+      engineSet = new Set(expandedEngineIds);
+    }
+
+    // SAFE Prisma WHERE (no undefined leakage)
+    const fitments = await this.prisma.productFitment.findMany({
+      where: {
+        makeId,
+        modelId,
+        ...(generationId ? { generationId } : {}),
+        ...(engineId
+          ? { engineId }
+          : expandedEngineIds
+          ? { engineId: { in: expandedEngineIds } }
+          : {}),
+        ...(trimId ? { trimId } : {}),
+        ...(year
+          ? {
+              yearStart: { lte: year },
+              yearEnd: { gte: year },
+            }
+          : {}),
+      },
+    });
+
+    return fitments.map((f) => {
+      let score = config.weightModel;
+      let level: FitmentLevel = "MODEL";
+      const type: FitmentType = f.type;
+
+      if (f.level === "TRIM") {
+        level = "TRIM";
+        score = config.weightTrim;
+      } else if (engineId && f.engineId === engineId) {
+        level = "ENGINE";
+        score = config.weightEngine;
+      } else if (
+        !engineId &&
+        engineSet &&
+        f.engineId &&
+        engineSet.has(f.engineId)
+      ) {
+        level = "ENGINE";
+        score = Math.floor(config.weightEngine * 0.75);
+      } else if (f.level === "GENERATION") {
+        level = "GENERATION";
+        score = config.weightGeneration;
+      }
+
+      if (f.isUniversal) {
+        score = config.weightMake;
+        level = "GLOBAL";
+      }
+
+      return {
+        productId: f.productId,
         score,
         level,
         type,
-      });
-    }
-  }
-
-  return Array.from(results.values());
-}
-
-
-private async resolveViaDirectQuery(
-  query: FitmentResolutionQuery,
-  config: FitmentServiceConfig
-): Promise<
-  Array<{
-    productId: string;
-    score: number;
-    level: FitmentLevel;
-    type: FitmentType;
-  }>
-> {
-  const {
-    makeId,
-    modelId,
-    generationId,
-    engineId,
-    trimId,
-    year,
-  } = query;
-
-  if (!makeId || !modelId) {
-    return [];
-  }
-
-  let expandedEngineIds: string[] | null = null;
-  let engineSet: Set<string> | null = null;
-
-  if (config.allowEngineFallback && !engineId && generationId) {
-    const engines = await this.prisma.vehicleEngine.findMany({
-      where: { generationId },
-      select: { id: true },
+      };
     });
-
-    expandedEngineIds = engines.map((e) => e.id);
-    engineSet = new Set(expandedEngineIds);
   }
 
-  // ✅ SAFE Prisma WHERE (no undefined leakage)
-  const fitments = await this.prisma.productFitment.findMany({
-    where: {
-      makeId,
-      modelId,
-
-      ...(generationId ? { generationId } : {}),
-
-      ...(engineId
-        ? { engineId }
-        : expandedEngineIds
-        ? { engineId: { in: expandedEngineIds } }
-        : {}),
-
-      ...(trimId ? { trimId } : {}),
-
-      ...(year
-        ? {
-            yearStart: { lte: year },
-            yearEnd: { gte: year },
-          }
-        : {}),
-    },
-  });
-
-  return fitments.map((f) => {
-    let score = config.weightModel;
-    let level: FitmentLevel = "MODEL";
-    const type: FitmentType = f.type;
-
-    if (f.level === "TRIM") {
-      level = "TRIM";
-      score = config.weightTrim;
-    } else if (engineId && f.engineId === engineId) {
-      level = "ENGINE";
-      score = config.weightEngine;
-    } else if (
-      !engineId &&
-      engineSet &&
-      f.engineId &&
-      engineSet.has(f.engineId)
-    ) {
-      level = "ENGINE";
-      score = Math.floor(config.weightEngine * 0.75);
-    } else if (f.level === "GENERATION") {
-      level = "GENERATION";
-      score = config.weightGeneration;
-    }
-
-    if (f.isUniversal) {
-      score = config.weightMake;
-      level = "GLOBAL";
-    }
-
-    return {
-      productId: f.productId,
-      score,
-      level,
-      type,
-    };
-  });
-}
-    // ======================
+  // ======================
   // LOGS
   // ======================
 
@@ -1076,28 +1161,101 @@ private async resolveViaDirectQuery(
     });
   }
 
+  // ======================
+  // VALIDATION
+  // ======================
 
-  private async validateVehicleHierarchy(tx: PrismaTransaction, data: any) {
-    if (data.modelId && data.makeId) {
-      const model = await tx.vehicleModel.findUnique({ where: { id: data.modelId } });
-      if (model?.makeId !== data.makeId) {
-        throw new Error("Invalid vehicle hierarchy: model does not belong to make");
+  private async validateVehicleHierarchy(
+    tx: PrismaTransaction,
+    data: VehicleHierarchyInput
+  ): Promise<void> {
+    // ==========================================
+    // TRIM -> ENGINE -> GENERATION -> MODEL -> MAKE
+    // ==========================================
+    if (data.trimId) {
+      const trim = await tx.vehicleTrim.findUnique({
+        where: { id: data.trimId },
+        select: {
+          id: true,
+          engineId: true,
+        },
+      });
+
+      if (!trim) {
+        throw new Error("Vehicle trim not found");
+      }
+
+      if (data.engineId && trim.engineId !== data.engineId) {
+        throw new Error(
+          "Invalid vehicle hierarchy: trim does not belong to engine"
+        );
       }
     }
 
-    if (data.generationId && data.modelId) {
-      const gen = await tx.vehicleGeneration.findUnique({ where: { id: data.generationId } });
-      if (gen?.modelId !== data.modelId) {
-        throw new Error("Invalid vehicle hierarchy: generation mismatch");
+    if (data.engineId) {
+      const engine = await tx.vehicleEngine.findUnique({
+        where: { id: data.engineId },
+        select: {
+          id: true,
+          generationId: true,
+        },
+      });
+
+      if (!engine) {
+        throw new Error("Vehicle engine not found");
+      }
+
+      if (
+        data.generationId &&
+        engine.generationId !== data.generationId
+      ) {
+        throw new Error(
+          "Invalid vehicle hierarchy: engine does not belong to generation"
+        );
       }
     }
 
-    if (data.engineId && data.generationId) {
-      const engine = await tx.vehicleEngine.findUnique({ where: { id: data.engineId } });
-      if (engine?.generationId !== data.generationId) {
-        throw new Error("Invalid engine hierarchy");
+    if (data.generationId) {
+      const generation = await tx.vehicleGeneration.findUnique({
+        where: { id: data.generationId },
+        select: {
+          id: true,
+          modelId: true,
+        },
+      });
+
+      if (!generation) {
+        throw new Error("Vehicle generation not found");
+      }
+
+      if (
+        data.modelId &&
+        generation.modelId !== data.modelId
+      ) {
+        throw new Error(
+          "Invalid vehicle hierarchy: generation does not belong to model"
+        );
+      }
+    }
+
+    if (data.modelId) {
+      const model = await tx.vehicleModel.findUnique({
+        where: { id: data.modelId },
+        select: {
+          id: true,
+          makeId: true,
+        },
+      });
+
+      if (!model) {
+        throw new Error("Vehicle model not found");
+      }
+
+      if (data.makeId && model.makeId !== data.makeId) {
+        throw new Error(
+          "Invalid vehicle hierarchy: model does not belong to make"
+        );
       }
     }
   }
 }
-

@@ -33,7 +33,7 @@ const uuidSchema = z.string().uuid();
 
 export const paginationSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  limit: z.coerce.number().int().positive().max(500).default(20), // Increased from 100 to 500
 });
 
 //////////////////////////////////////////////////////////
@@ -117,14 +117,14 @@ const productFitmentBaseObjectSchema = z.object({
   generationId: uuidSchema.optional(),
   engineId: uuidSchema.optional(),
   trimId: uuidSchema.optional(),
-  yearStart: z.number().int().min(1900).max(2100).optional(),
-  yearEnd: z.number().int().min(1900).max(2100).optional(),
+  yearStart: z.coerce.number().int().min(1900).max(2100).optional(),
+  yearEnd: z.coerce.number().int().min(1900).max(2100).optional(),
   notes: z.string().trim().max(2000).optional(),
   position: z.string().trim().max(100).optional(),
-  quantityRequired: z.number().int().positive().optional(),
+  quantityRequired: z.coerce.number().int().positive().optional(),
   isUniversal: z.boolean().optional(),
   isVerified: z.boolean().optional(),
-  confidenceScore: z.number().int().min(0).max(100).optional(),
+  confidenceScore: z.coerce.number().int().min(0).max(100).optional(),
 });
 
 // Apply superRefine to the base schema
@@ -386,5 +386,30 @@ export const fitmentResolutionQuerySchema = z.object({
   year: z.coerce.number().int().min(1900).max(2100).optional(),
 });
 
+
+export const findCompatibleProductsSchema =
+  paginationSchema.extend({
+    makeId: uuidSchema,
+    modelId: uuidSchema,
+
+    generationId: uuidSchema.optional(),
+    engineId: uuidSchema.optional(),
+    trimId: uuidSchema.optional(),
+
+    year: z.coerce
+      .number()
+      .int()
+      .min(1900)
+      .max(2100)
+      .optional(),
+
+    verifiedOnly: z.coerce
+      .boolean()
+      .default(false),
+  });
+
+export type FindCompatibleProductsQuery =
+  z.infer<typeof findCompatibleProductsSchema>;
+  
 export type FitmentResolutionQuery =
   z.infer<typeof fitmentResolutionQuerySchema>;

@@ -23,6 +23,7 @@ const permissionMatrix: Record<string, readonly string[]> =
     product: ["create", "read", "update", "delete"],
     category: ["create", "read", "update", "delete"],
     brand: ["create", "read", "update", "delete"],
+    vehicle: ["create", "read", "update", "delete"],
 
     review: ["create", "read", "update", "delete"],
 
@@ -174,6 +175,13 @@ const permissionGroups: Record<string, readonly string[]> =
       "feedback:delete",
     ],
 
+    VEHICLE_MANAGEMENT: [
+      "vehicle:create",
+      "vehicle:read",
+      "vehicle:update",
+      "vehicle:delete",
+    ],
+
     LOGISTICS_MANAGEMENT: [
       "shipment:create",
       "shipment:read",
@@ -311,6 +319,7 @@ const roleDefinitions: readonly RoleDef[] = [
       "CHAT_MANAGEMENT",
       "FITMENT_MANAGEMENT",
       "LOGISTICS_MANAGEMENT",
+      "VEHICLE_MANAGEMENT",
     ],
   },
   {

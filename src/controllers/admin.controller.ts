@@ -36,6 +36,7 @@ const adminSidebar: SidebarSection[] = [
       { label: "Categories", path: "/admin/categories", permission: "category:read" },
       { label: "Brands", path: "/admin/brands", permission: "brand:read" },
       { label: "Fitments", path: "/admin/fitments", permission: "fitment:read" },
+      { label: "Vehicles", path: "/admin/vehicles", permission: "vehicle:read" },
     ],
   },
   {
