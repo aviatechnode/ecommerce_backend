@@ -1,24 +1,72 @@
-// =========================================================
+//////////////////////////////////////////////////////////
 // CONVERSATIONS
-// =========================================================
-
+//////////////////////////////////////////////////////////
 model Conversation {
   id String @id @default(uuid())
+
+  //////////////////////////////////////////////////////
+  // CUSTOMER
+  //////////////////////////////////////////////////////
 
   customerId String?
   customer User? @relation("CustomerConversations", fields: [customerId], references: [id], onDelete: SetNull)
 
-  assignedAdminId String?
-  assignedAdmin User? @relation("AssignedConversations", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  guestSessionId String?
+  guestName String?
+  guestEmail String?
+  guestPhone String?
+
+  //////////////////////////////////////////////////////
+  // ASSIGNED ADMIN
+  //////////////////////////////////////////////////////
+
+  assignedUserId String?
+  assignedUser User? @relation("AssignedConversations", fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  teamId String?
+  team SupportTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  assignedAt DateTime?
+  assignmentMethod AssignmentMethod @default(AUTOMATIC)
+  source ConversationSource @default(WEBSITE)
+  language String @default("en")
+
+  //////////////////////////////////////////////////////
+  // RELATED BUSINESS OBJECTS
+  //////////////////////////////////////////////////////
 
   orderId String?
-  subject String?
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
+  productId String?
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  vehicleId String?
+  vehicle VehicleTrim? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  //////////////////////////////////////////////////////
+  // DETAILS
+  //////////////////////////////////////////////////////
+
+  subject String?
   status ConversationStatus @default(OPEN)
   priority ConversationPriority @default(NORMAL)
   channel ConversationChannel @default(WEB)
 
-  isLocked Boolean @default(false)
+  //////////////////////////////////////////////////////
+  // METRICS
+  //////////////////////////////////////////////////////
+
+  firstResponseAt DateTime?
+  resolvedAt DateTime?
+  closedAt DateTime?
+
+  customerRating Int?
+  customerFeedback String?
+
+  //////////////////////////////////////////////////////
+  // LAST MESSAGE CACHE
+  //////////////////////////////////////////////////////
 
   lastMessageId String?
   lastMessageRef Message? @relation("ConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
@@ -26,161 +74,321 @@ model Conversation {
   lastMessage String?
   lastMessageAt DateTime?
   lastMessageById String?
+  lastMessageBy User? @relation("ConversationLastMessageSender", fields: [lastMessageById], references: [id], onDelete: SetNull)
+
+  lastMessageType MessageType?
+
+  createdById String?
+  createdBy User? @relation("ConversationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  archivedAt DateTime?
+  deletedAt DateTime?
+  firstAssignedAt DateTime?
+  lastActivityAt DateTime? @default(now())
+
+  deletedById String?
+  deletedBy User? @relation("ConversationDeletor", fields: [deletedById], references: [id], onDelete: SetNull)
+
+  archivedById String?
+  archivedBy User? @relation("ConversationArchived", fields: [archivedById], references: [id], onDelete: SetNull)
+
+  //////////////////////////////////////////////////////
+  // FLAGS
+  //////////////////////////////////////////////////////
+
+  isLocked Boolean @default(false)
+
+  //////////////////////////////////////////////////////
+  // RELATIONS
+  //////////////////////////////////////////////////////
 
   messages Message[] @relation("ConversationMessages")
   participants ConversationParticipant[]
   tags ConversationTagPivot[]
-  slas ConversationSLA[]
+  sla ConversationSLA?
+  events ConversationEvent[]
+  notifications Notification[]
+
+  //////////////////////////////////////////////////////
+  // TIMESTAMPS
+  //////////////////////////////////////////////////////
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  resolvedAt DateTime?
-  closedAt DateTime?
 
   @@index([customerId])
-  @@index([assignedAdminId])
+  @@index([assignedUserId])
+  @@index([orderId])
+  @@index([productId])
+  @@index([vehicleId])
   @@index([status])
   @@index([priority])
   @@index([lastMessageAt])
-  @@index([orderId])
+  @@index([customerRating])
+  @@index([status, priority])
+  @@index([customerId, status])
+  @@index([assignedUserId, status])
+  @@index([guestSessionId])
+  @@index([lastActivityAt])
+  @@index([guestEmail])
+  @@index([teamId])
+  userPresenceSessions UserPresenceSession[]
+}
+
+//////////////////////////////////////////////////////////
+// SUPPORT TEAM
+//////////////////////////////////////////////////////////
+
+model SupportTeam {
+  id String @id @default(uuid())
+
+  name String
+  description String?
+
+  slug String? @unique
+  isActive Boolean @default(true)
+
+  members SupportTeamMember[]
+  conversations Conversation[]
+  events SupportTeamEvent[]
+
+  createdById String?
+  createdBy User? @relation("SupportTeamCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([slug])
+  @@index([isActive])
+}
+
+model SupportTeamMember {
+  id String @id @default(uuid())
+
+  teamId String
+  team SupportTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  roleId String
+  role Role @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+//////////////////////////////////////////////////////////
+// SUPPORT TEAM EVENTS
+//////////////////////////////////////////////////////////
+
+model SupportTeamEvent {
+  id String @id @default(uuid())
+
+  teamId String
+  team SupportTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  type SupportTeamEventType
+
+  userId String?
+  user User? @relation("SupportTeamEventUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  actorId String?
+  actor User? @relation("SupportTeamEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  oldValue Json?
+  newValue Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([teamId])
+  @@index([type])
+  @@index([userId])
+  @@index([actorId])
+  @@index([createdAt])
 }
 
 
-
-// =========================================================
+//////////////////////////////////////////////////////////
 // PARTICIPANTS
-// =========================================================
+//////////////////////////////////////////////////////////
 
 model ConversationParticipant {
   id String @id @default(uuid())
 
   conversationId String
   userId String
-
-  roleInConversation ConversationRole
-
+  
   unreadCount Int @default(0)
+
   isMuted Boolean @default(false)
 
   lastReadMessageId String?
-  lastReadMessage Message? @relation(fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+
+  lastReadMessage Message? @relation( fields: [lastReadMessageId], references: [id], onDelete: SetNull)
 
   joinedAt DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
+  @@index([lastReadMessageId])
   @@index([conversationId])
   @@index([userId])
 }
 
 
 
-// =========================================================
+//////////////////////////////////////////////////////////
 // MESSAGES
-// =========================================================
+//////////////////////////////////////////////////////////
 
 model Message {
   id String @id @default(uuid())
 
   conversationId String
+
   conversation Conversation @relation("ConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
 
   senderId String?
-  sender User? @relation(fields: [senderId], references: [id], onDelete: SetNull)
+  guestSessionId String?
+  senderType MessageSenderType
+  
+  sender User? @relation( fields: [senderId], references: [id], onDelete: SetNull)
 
   type MessageType @default(TEXT)
+
   content String?
 
   replyToId String?
-  replyTo Message? @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+
+  replyTo Message? @relation( "MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+
   replies Message[] @relation("MessageReplies")
+
+  //////////////////////////////////////////////////////
+  // CONTEXT LINKS
+  //////////////////////////////////////////////////////
 
   orderId String?
   shipmentId String?
   returnRequestId String?
 
+  //////////////////////////////////////////////////////
+  // DELIVERY
+  //////////////////////////////////////////////////////
+
   deliveryStatus MessageDeliveryStatus @default(SENT)
+
   deliveredAt DateTime?
   readAt DateTime?
 
+  //////////////////////////////////////////////////////
+  // FLAGS
+  //////////////////////////////////////////////////////
+
   isInternal Boolean @default(false)
   isEdited Boolean @default(false)
+
   deletedAt DateTime?
 
+  //////////////////////////////////////////////////////
+  // RELATIONS
+  //////////////////////////////////////////////////////
+
   attachments MessageAttachment[]
+
   reads MessageRead[]
+
+  //////////////////////////////////////////////////////
+  // TIMESTAMPS
+  //////////////////////////////////////////////////////
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  editedAt DateTime?
 
   @@index([conversationId, createdAt])
   @@index([senderId])
   @@index([type])
   @@index([deletedAt])
+
   conversations Conversation[] @relation("ConversationLastMessage")
   conversationParticipants ConversationParticipant[]
+  notifications Notification[]
 }
 
 
 
-// =========================================================
+//////////////////////////////////////////////////////////
 // MESSAGE ATTACHMENTS
-// =========================================================
+//////////////////////////////////////////////////////////
 
 model MessageAttachment {
   id String @id @default(uuid())
 
   messageId String
-  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  message Message @relation( fields: [messageId], references: [id], onDelete: Cascade)
 
   url String
+
   filename String
   mimeType String
   extension String?
+
   size Int
 
   uploadedById String?
+  storageKey String
+
   uploadedBy User? @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
   @@index([messageId])
-  @@index([uploadedById])
 }
 
 
 
-// =========================================================
+//////////////////////////////////////////////////////////
 // MESSAGE READS
-// =========================================================
+//////////////////////////////////////////////////////////
 
 model MessageRead {
   id String @id @default(uuid())
 
   messageId String
-  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
-
   userId String
+
+  message Message @relation( fields: [messageId], references: [id], onDelete: Cascade)
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   readAt DateTime @default(now())
 
   @@unique([messageId, userId])
+
   @@index([userId])
-  @@index([messageId])
 }
 
 
 
-// =========================================================
-// CONVERSATION TAGS
-// =========================================================
+//////////////////////////////////////////////////////////
+// TAGS
+//////////////////////////////////////////////////////////
 
 model ConversationTag {
   id String @id @default(uuid())
+
   name String @unique
+
   color String?
 
   conversations ConversationTagPivot[]
@@ -194,25 +402,59 @@ model ConversationTagPivot {
   conversationId String
   tagId String
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation( fields: [conversationId], references: [id], onDelete: Cascade)
+
   tag ConversationTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, tagId])
+
   @@index([conversationId])
   @@index([tagId])
 }
 
 
 
-// =========================================================
+//////////////////////////////////////////////////////////
+// EVENTS / AUDIT TRAIL
+//////////////////////////////////////////////////////////
+
+model ConversationEvent {
+  id String @id @default(uuid())
+
+  conversationId String
+
+  actorId String?
+
+  type ConversationEventType
+
+  description String?
+  oldValue Json?
+  newValue Json?
+
+  metadata Json?
+
+  conversation Conversation @relation( fields: [conversationId], references: [id], onDelete: Cascade)
+
+  actor User? @relation( fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId])
+  @@index([type])
+}
+
+
+
+//////////////////////////////////////////////////////////
 // SLA TRACKING
-// =========================================================
+//////////////////////////////////////////////////////////
 
 model ConversationSLA {
   id String @id @default(uuid())
 
   conversationId String @unique
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  conversation Conversation @relation( fields: [conversationId], references: [id], onDelete: Cascade)
 
   firstResponseDueAt DateTime?
   resolutionDueAt DateTime?
@@ -222,4 +464,122 @@ model ConversationSLA {
 
   breachedFirstResponse Boolean @default(false)
   breachedResolution Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 
+
+model EventOutbox {
+  id            String             @id @default(uuid())
+  eventId       String             @unique @default(uuid())
+  type          String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  status        EventOutboxStatus  @default(PENDING)
+  attempts      Int                @default(0)
+  lastError     String?
+  createdAt     DateTime           @default(now())
+  processedAt   DateTime?
+  scheduledAt   DateTime?          @default(now())
+  lockedAt      DateTime?
+  lockedBy      String?
+  expiresAt DateTime?
+
+  @@index([status])
+  @@index([processedAt])
+  @@index([scheduledAt])
+  @@index([aggregateId])
+  @@index([aggregateType, aggregateId])
+  @@index([type])
+}
+
+// NOTIFICATIONS
+model Notification {
+  id String @id @default(uuid())
+
+  userId String
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  type NotificationType
+
+  title String
+  message String
+
+  isRead Boolean @default(false)
+
+  entityType String?
+  entityId String?
+
+  conversationId String?
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  messageId String?
+  chatMessage Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  senderId String?
+  sender User? @relation("NotificationSender", fields: [senderId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  readAt DateTime?
+
+  @@index([userId, isRead])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([senderId])
+}
+
+model MessageDraft {
+  id String @id @default(uuid())
+
+  conversationId String
+  userId String
+
+  content String?
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([conversationId, userId])
+}
+
+model UserPresence {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status PresenceStatus @default(OFFLINE)
+
+  lastSeenAt DateTime @default(now())
+  lastHeartbeatAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status])
+  @@index([lastSeenAt])
+}
+
+model UserPresenceSession {
+  id String @id @default(uuid())
+
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  socketId String @unique
+
+  deviceId String?
+
+  isTyping Boolean @default(false)
+
+  typingConversationId String?
+  typingConversation Conversation? @relation(fields: [typingConversationId], references: [id], onDelete: SetNull)
+
+  connectedAt DateTime @default(now())
+  lastHeartbeatAt DateTime @default(now())
+
+  disconnectedAt DateTime?
+
+  @@index([userId])
+  @@index([socketId])
+  @@index([typingConversationId])
 }

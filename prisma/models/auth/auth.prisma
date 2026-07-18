@@ -11,6 +11,7 @@ model Role {
   users                User[]
   rolePermissions      RolePermission[]
   rolePermissionGroups RolePermissionGroup[]
+  supportTeamMemberships SupportTeamMember[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -71,56 +72,6 @@ model PermissionAssignment {
   permission Permission      @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@id([groupId, permissionId])
-}
-
-// USER SYSTEM
-model User {
-  id       String  @id @default(uuid())
-  email    String  @unique
-  password String
-  name     String?
-  googleId String? @unique
-
-  roleId String
-  role   Role   @relation(fields: [roleId], references: [id])
-
-  emailVerified     Boolean @default(false)
-  verificationToken String? @unique
-
-  resetPasswordToken   String?   @unique
-  resetPasswordExpires DateTime?
-  isOnline             Boolean   @default(false)
-  lastSeen             DateTime?
-
-  createdAt DateTime @default(now())
-
-  refreshTokens RefreshToken[]
-  cart          Cart?
-  addresses     Address[]
-  orders        Order[]
-  reviews       ProductReview[]
-  wishlist      Wishlist?
-
-  idempotencyKeys IdempotencyKey[]
-
-  notifications            Notification[]
-  auditLogs                AuditLog[]
-  messages                 Message[]
-  conversationParticipants ConversationParticipant[]
-  createdCoupons           Coupon[]                  @relation("CouponCreatedBy")
-  updatedCoupons           Coupon[]                  @relation("CouponUpdatedBy")
-  couponAuditLogs          CouponAuditLog[]          @relation("CouponAuditAdmin")
-
-  couponUsages        CouponUsage[]
-  couponReservations  CouponReservation[]
-  couponCustomerRules CouponCustomerRule[]
-  checkoutSessions CheckoutSession[]
-
-  messageReads MessageRead[]
-
-  messageAttachments MessageAttachment[]
-  customerConversations Conversation[] @relation("CustomerConversations")
-  assignedConversations Conversation[] @relation("AssignedConversations")
 }
 
 model RefreshToken {

@@ -21,7 +21,7 @@ import {
   normalizeEmail,
   buildUpdateData,
   assertUniqueCourier,
-} from "../_shared/shippingValidation.helpers.js";
+} from "../../chat/_shared/shippingValidation.helpers.js";
 
 /* =========================================================
 COURIER SERVICE

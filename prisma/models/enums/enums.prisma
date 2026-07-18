@@ -1,343 +1,425 @@
 
 
-enum CouponLogAction {
-  APPLIED
-  REJECTED
-  EXPIRED
-  LIMIT_REACHED
-  USED
-}
+  enum CouponLogAction {
+    APPLIED
+    REJECTED
+    EXPIRED
+    LIMIT_REACHED
+    USED
+  }
 
-// ENUMS
-enum MediaType {
-  IMAGE
-  VIDEO
-}
+  // ENUMS
+  enum MediaType {
+    IMAGE
+    VIDEO
+  }
 
-enum ShippingRateType {
-  FLAT_RATE
-  WEIGHT_BASED
-  DISTANCE_BASED
-  PRICE_BASED
-  HYBRID
-}
+  enum ShippingRateType {
+    FLAT_RATE
+    WEIGHT_BASED
+    DISTANCE_BASED
+    PRICE_BASED
+    HYBRID
+  }
 
-enum ShippingZoneType {
-  LOCAL
-  STATE
-  NATIONAL
-  INTERNATIONAL
-}
+  enum ShippingZoneType {
+    LOCAL
+    STATE
+    NATIONAL
+    INTERNATIONAL
+  }
 
-enum ShipmentStatus {
-  PENDING
-  PROCESSING
-  IN_TRANSIT
-  DELIVERED
-  CANCELLED
-}
+  enum ShipmentStatus {
+    PENDING
+    PROCESSING
+    IN_TRANSIT
+    DELIVERED
+    CANCELLED
+  }
 
-enum DeliveryMethod {
-  DOOR_DELIVERY
-  PICKUP
-  EXPRESS
-  STANDARD
-}
+  enum DeliveryMethod {
+    DOOR_DELIVERY
+    PICKUP
+    EXPRESS
+    STANDARD
+  }
 
-enum InventoryMovementType {
-  PURCHASE
-  SALE
-  ADJUSTMENT
-  RETURN
-}
+  enum InventoryMovementType {
+    PURCHASE
+    SALE
+    ADJUSTMENT
+    RETURN
+  }
 
-enum OrderStatus {
-  PENDING_PAYMENT
-  PAID
-  PROCESSING
-  PARTIALLY_SHIPPED
-  SHIPPED
-  DELIVERED
-  CANCELLED
-  REFUNDED
-}
+  enum OrderStatus {
+    PENDING_PAYMENT
+    PAID
+    PROCESSING
+    PARTIALLY_SHIPPED
+    SHIPPED
+    DELIVERED
+    CANCELLED
+    REFUNDED
+  }
 
-enum PaymentStatus {
-  PENDING
-  PAID
-  FAILED
-}
+  enum PaymentStatus {
+    PENDING
+    PAID
+    FAILED
+  }
 
-enum PurchaseOrderStatus {
-  PENDING
-  ORDERED
-  RECEIVED
-  CANCELLED
-}
-
-enum NotificationType {
-  ORDER_UPDATE
-  PAYMENT_UPDATE
-  SHIPPING_UPDATE
-  PROMOTION
-  SYSTEM
-}
-
-enum StockReservationStatus {
-  RESERVED
-  CONFIRMED
-  RELEASED
-  EXPIRED
-}
-
-enum RefundStatus {
-  PENDING
-  SUCCESS
-  FAILED
-}
-
-enum CouponType {
-  FIXED_AMOUNT
-  PERCENTAGE
-  FREE_SHIPPING
-}
-
-enum CouponScope {
-  ORDER_TOTAL
-  SHIPPING_ONLY
-  PRODUCT_ONLY
-}
-
-enum CouponStatus {
-  DRAFT
-  ACTIVE
-  PAUSED
-  EXPIRED
-  ARCHIVED
-}
-
-enum CouponAppliesTo {
-  ALL_PRODUCTS
-  SPECIFIC_PRODUCTS
-  SPECIFIC_CATEGORIES
-  SPECIFIC_CUSTOMERS
-}
-
-enum CouponReservationStatus {
-  ACTIVE
-  CONSUMED
-  EXPIRED
-  RELEASED
-}
-
-enum CouponUsageStatus {
-  SUCCESS
-  REFUNDED
-  REVERSED
-}
-
-enum PaymentProvider {
-  PAYSTACK
-  FLUTTERWAVE
-  STRIPE
-  BANK_TRANSFER
-  CASH_ON_DELIVERY
-}
-
-enum ShippingMethod {
-  STANDARD
-  EXPRESS
-  SAME_DAY
-  PICKUP_STATION
-}
-
-// VEHICLE FITMENT
-enum FitmentType {
-  UNIVERSAL
-  EXACT
-  RANGE
-  ENGINE_SPECIFIC
-  TRIM_SPECIFIC
-  OEM_MATCH
-  CROSS_REFERENCE
-  GENERATION_ONLY
-}
-
-enum FitmentLevel {
-  GLOBAL
-  MAKE
-  MODEL
-  GENERATION
-  ENGINE
-  TRIM
-  EXACT_MATCH
-}
-
-// FUEL TYPE
-enum FuelType {
-  PETROL
-  DIESEL
-  HYBRID
-  PLUG_IN_HYBRID
-  ELECTRIC
-  LPG
-  CNG
-}
-
-// ASPIRATION TYPE
-enum AspirationType {
-  NA
-  TURBO
-  TWIN_TURBO
-  SUPERCHARGED
-}
-
-// TRANSMISSION TYPE
-enum TransmissionType {
-  MANUAL
-  AUTOMATIC
-  CVT
-  DCT
-}
-// DRIVE TYPE
-enum DriveType {
-  FWD
-  RWD
-  AWD
-  FOUR_WD
-}
-
-// BODY TYPE
-
-enum BodyType {
-  SEDAN
-  HATCHBACK
-  COUPE
-  CONVERTIBLE
-  SUV
-  CROSSOVER
-  PICKUP
-  WAGON
-  VAN
-  MINIVAN
-  MPV
-}
-
-enum ShipmentEventSource {
-  SYSTEM
-  COURIER
-  ADMIN
-  CUSTOMER
-}
-
-enum FulfillmentStatus {
-  PENDING
-  ALLOCATED
-  PICKING
-  PACKING
-  READY_FOR_DISPATCH
-  DISPATCHED
-  COMPLETED
-  FAILED
-}
-
-enum ReturnRequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  ITEM_SHIPPED_BACK
-  ITEM_RECEIVED
-  INSPECTING
-  REFUND_APPROVED
-  REFUNDED
-  CLOSED
-  CANCELLED
-}
-
-enum ReturnShipmentStatus {
-  PENDING
-  APPROVED
-  PICKED_UP
-  IN_TRANSIT
-  RECEIVED
-  INSPECTING
-  REFUNDED
-  REJECTED
-  CANCELLED
-}
-
-enum ReturnRequestItemStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  SHIPPED_BACK
-  RECEIVED
-  INSPECTING
-  REFUND_APPROVED
-  REFUNDED
-  CLOSED
-}
-
-enum ShipmentType {
-  OUTBOUND
-  RETURN
-}
+  enum PurchaseOrderStatus {
+    PENDING
+    ORDERED
+    RECEIVED
+    CANCELLED
+  }
 
 
-// =========================================================
-// ENUMS
-// =========================================================
+  enum StockReservationStatus {
+    RESERVED
+    CONFIRMED
+    RELEASED
+    EXPIRED
+  }
 
-enum ConversationStatus {
-  OPEN
-  PENDING_CUSTOMER
-  PENDING_SUPPORT
-  RESOLVED
-  CLOSED
-  ESCALATED
-}
+  enum RefundStatus {
+    PENDING
+    SUCCESS
+    FAILED
+  }
 
-enum ConversationPriority {
-  LOW
-  NORMAL
-  HIGH
-  URGENT
-}
+  enum CouponType {
+    FIXED_AMOUNT
+    PERCENTAGE
+    FREE_SHIPPING
+  }
 
-enum ConversationChannel {
-  WEB
-  MOBILE
-  EMAIL
-  WHATSAPP
-  INSTAGRAM
-  FACEBOOK
-  SYSTEM
-}
+  enum CouponScope {
+    ORDER_TOTAL
+    SHIPPING_ONLY
+    PRODUCT_ONLY
+  }
 
-enum ConversationRole {
-  CUSTOMER
-  ADMIN
-  SUPPORT
-  SYSTEM
-}
+  enum CouponStatus {
+    DRAFT
+    ACTIVE
+    PAUSED
+    EXPIRED
+    ARCHIVED
+  }
 
-enum MessageType {
-  TEXT
-  IMAGE
-  FILE
+  enum CouponAppliesTo {
+    ALL_PRODUCTS
+    SPECIFIC_PRODUCTS
+    SPECIFIC_CATEGORIES
+    SPECIFIC_CUSTOMERS
+  }
 
-  ORDER_EVENT
-  PAYMENT_EVENT
-  SHIPMENT_EVENT
-  RETURN_EVENT
+  enum CouponReservationStatus {
+    ACTIVE
+    CONSUMED
+    EXPIRED
+    RELEASED
+  }
 
-  SYSTEM
-  INTERNAL_NOTE
-}
+  enum CouponUsageStatus {
+    SUCCESS
+    REFUNDED
+    REVERSED
+  }
 
-enum MessageDeliveryStatus {
-  SENT
-  DELIVERED
-  READ
-  FAILED
-}
+  enum PaymentProvider {
+    PAYSTACK
+    FLUTTERWAVE
+    STRIPE
+    BANK_TRANSFER
+    CASH_ON_DELIVERY
+  }
+
+  enum ShippingMethod {
+    STANDARD
+    EXPRESS
+    SAME_DAY
+    PICKUP_STATION
+  }
+
+  // VEHICLE FITMENT
+  enum FitmentType {
+    UNIVERSAL
+    EXACT
+    RANGE
+    ENGINE_SPECIFIC
+    TRIM_SPECIFIC
+    OEM_MATCH
+    CROSS_REFERENCE
+    GENERATION_ONLY
+  }
+
+  enum FitmentLevel {
+    GLOBAL
+    MAKE
+    MODEL
+    GENERATION
+    ENGINE
+    TRIM
+    EXACT_MATCH
+  }
+
+  // FUEL TYPE
+  enum FuelType {
+    PETROL
+    DIESEL
+    HYBRID
+    PLUG_IN_HYBRID
+    ELECTRIC
+    LPG
+    CNG
+  }
+
+  // ASPIRATION TYPE
+  enum AspirationType {
+    NA
+    TURBO
+    TWIN_TURBO
+    SUPERCHARGED
+  }
+
+  // TRANSMISSION TYPE
+  enum TransmissionType {
+    MANUAL
+    AUTOMATIC
+    CVT
+    DCT
+  }
+  // DRIVE TYPE
+  enum DriveType {
+    FWD
+    RWD
+    AWD
+    FOUR_WD
+  }
+
+  // BODY TYPE
+
+  enum BodyType {
+    SEDAN
+    HATCHBACK
+    COUPE
+    CONVERTIBLE
+    SUV
+    CROSSOVER
+    PICKUP
+    WAGON
+    VAN
+    MINIVAN
+    MPV
+  }
+
+  enum ShipmentEventSource {
+    SYSTEM
+    COURIER
+    ADMIN
+    CUSTOMER
+  }
+
+  enum FulfillmentStatus {
+    PENDING
+    ALLOCATED
+    PICKING
+    PACKING
+    READY_FOR_DISPATCH
+    DISPATCHED
+    COMPLETED
+    FAILED
+  }
+
+  enum ReturnRequestStatus {
+    PENDING
+    APPROVED
+    REJECTED
+    ITEM_SHIPPED_BACK
+    ITEM_RECEIVED
+    INSPECTING
+    REFUND_APPROVED
+    REFUNDED
+    CLOSED
+    CANCELLED
+  }
+
+  enum ReturnShipmentStatus {
+    PENDING
+    APPROVED
+    PICKED_UP
+    IN_TRANSIT
+    RECEIVED
+    INSPECTING
+    REFUNDED
+    REJECTED
+    CANCELLED
+  }
+
+  enum ReturnRequestItemStatus {
+    PENDING
+    APPROVED
+    REJECTED
+    SHIPPED_BACK
+    RECEIVED
+    INSPECTING
+    REFUND_APPROVED
+    REFUNDED
+    CLOSED
+  }
+
+  enum ShipmentType {
+    OUTBOUND
+    RETURN
+  }
+
+
+  // =========================================================
+  // ENUMS
+  // =========================================================
+
+
+  enum ConversationStatus {
+    NEW
+    OPEN
+    PENDING
+    WAITING_FOR_CUSTOMER
+    WAITING_FOR_SUPPORT
+    RESOLVED
+    CLOSED
+  }
+
+  enum ConversationPriority {
+    LOW
+    NORMAL
+    HIGH
+    URGENT
+  }
+
+  enum ConversationChannel {
+    WEB
+    MOBILE
+    EMAIL
+    WHATSAPP
+    PHONE
+  }
+
+  enum MessageType {
+    TEXT
+    IMAGE
+    FILE
+    AUDIO
+    VIDEO
+    SYSTEM
+  }
+
+  enum MessageSenderType {
+    CUSTOMER
+    GUEST
+    AGENT
+    SYSTEM
+    AI
+  }
+
+  enum MessageDeliveryStatus {
+    SENT
+    DELIVERED
+    READ
+    FAILED
+  }
+
+  enum ConversationEventType {
+    CONVERSATION_CREATED
+    CONVERSATION_ASSIGNED
+    CONVERSATION_UNASSIGNED
+
+    CONVERSATION_STATUS_CHANGED
+    CONVERSATION_PRIORITY_CHANGED
+
+    CONVERSATION_LOCKED
+    CONVERSATION_UNLOCKED
+
+    CONVERSATION_RESOLVED
+    CONVERSATION_CLOSED
+    CONVERSATION_REOPENED
+
+    CONVERSATION_RATED
+
+    TAG_ADDED
+    TAG_REMOVED
+
+    PARTICIPANT_ADDED
+    PARTICIPANT_REMOVED
+
+    MESSAGE_SENT
+    MESSAGE_EDITED
+    MESSAGE_DELETED
+    MESSAGE_READ
+    ATTACHMENT_ADDED
+
+    INTERNAL_NOTE_CREATED
+  }
+
+  enum SupportTeamEventType {
+    MEMBER_ADDED
+    MEMBER_REMOVED
+    MEMBER_ROLE_CHANGED
+
+    MEMBER_ACTIVATED
+    MEMBER_DEACTIVATED
+
+    TEAM_CREATED
+    TEAM_UPDATED
+    TEAM_ACTIVATED
+    TEAM_DEACTIVATED
+  }
+
+  enum EventOutboxStatus {
+    PENDING
+    PROCESSING
+    PROCESSED
+    FAILED
+  }
+
+  enum NotificationType {
+    ORDER_UPDATE
+    PAYMENT_UPDATE
+    SHIPPING_UPDATE
+    PROMOTION
+    SYSTEM
+
+    CHAT_MESSAGE
+    CHAT_MENTION
+    CHAT_ASSIGNED
+    CHAT_UNASSIGNED
+    CHAT_STATUS_CHANGED
+  }
+
+  enum AssignmentMethod {
+    AUTOMATIC
+    MANUAL
+    AI
+  }
+
+  enum ConversationSource {
+      WEBSITE
+      MOBILE_APP
+      PRODUCT_PAGE
+      CATEGORY_PAGE
+      CHECKOUT
+      ORDER
+      FITMENT
+      ADMIN
+      API
+      WHATSAPP
+      EMAIL
+  }
+
+  enum PresenceStatus {
+    ONLINE
+    AWAY
+    OFFLINE
+  }

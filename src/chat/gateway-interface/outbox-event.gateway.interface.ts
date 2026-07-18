@@ -1,0 +1,87 @@
+import type { ChatActor } from "../interfaces/actor.interface.js";
+import type {
+  CreateOutboxEvent,
+  EventOutbox,
+} from "../schema_types/outbox-event.type.js";
+
+export interface IEventOutboxGateway {
+  ////////////////////////////////////////////////////////////
+  // CREATE
+  ////////////////////////////////////////////////////////////
+
+  create(
+    actor: ChatActor,
+    data: CreateOutboxEvent,
+  ): Promise<EventOutbox>;
+
+  createMany(
+    actor: ChatActor,
+    data: CreateOutboxEvent[],
+  ): Promise<EventOutbox[]>;
+
+  ////////////////////////////////////////////////////////////
+  // UPDATE
+  ////////////////////////////////////////////////////////////
+
+  update(
+    actor: ChatActor,
+    id: string,
+    data: Partial<EventOutbox>,
+  ): Promise<EventOutbox>;
+
+  ////////////////////////////////////////////////////////////
+  // FIND
+  ////////////////////////////////////////////////////////////
+
+  findById(
+    actor: ChatActor,
+    id: string,
+  ): Promise<EventOutbox | null>;
+
+  findMany(
+    actor: ChatActor,
+    limit?: number,
+  ): Promise<EventOutbox[]>;
+
+  count(): Promise<number>;
+
+  ////////////////////////////////////////////////////////////
+  // PROCESSING
+  ////////////////////////////////////////////////////////////
+
+  claimNextBatch(
+    actor: ChatActor,
+    workerId: string,
+    batchSize: number,
+  ): Promise<EventOutbox[]>;
+
+  ////////////////////////////////////////////////////////////
+  // LOCKING
+  ////////////////////////////////////////////////////////////
+
+  lock(
+    actor: ChatActor,
+    id: string,
+    workerId: string,
+  ): Promise<EventOutbox>;
+
+  unlock(
+    actor: ChatActor,
+    id: string,
+  ): Promise<EventOutbox>;
+
+  ////////////////////////////////////////////////////////////
+  // HOUSEKEEPING
+  ////////////////////////////////////////////////////////////
+
+  deleteExpired(): Promise<number>;
+
+  ////////////////////////////////////////////////////////////
+  // DELETE
+  ////////////////////////////////////////////////////////////
+
+  delete(
+    actor: ChatActor,
+    id: string,
+  ): Promise<void>;
+}

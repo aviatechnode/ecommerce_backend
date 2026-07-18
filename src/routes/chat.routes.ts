@@ -1,49 +1,117 @@
 import { Router } from "express";
+
 import { ChatController } from "../controllers/chat.controller.js";
 
-const router = Router();
+export function createChatRoutes(
+  controller: ChatController,
+): Router {
+  const router = Router();
 
-///////////////////////////////////////////////////////////
-// CONVERSATIONS
-///////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////
+  // CONVERSATIONS
+  //////////////////////////////////////////////////////
 
-router.get("/conversations", ChatController.getConversations);
+  router.post(
+    "/conversations",
+    controller.createConversation,
+  );
 
-router.get("/conversations/:id", ChatController.getConversationById);
+  router.post(
+    "/conversations/fitment",
+    controller.createFitmentConversation,
+  );
 
-router.post("/conversations", ChatController.createConversation);
+  router.get(
+    "/conversations/:conversationId",
+    controller.getConversation,
+  );
 
-router.patch("/conversations/:id", ChatController.updateConversation);
+  router.patch(
+    "/conversations/assign",
+    controller.assignConversation,
+  );
 
-///////////////////////////////////////////////////////////
-// MESSAGES
-///////////////////////////////////////////////////////////
+  router.patch(
+    "/conversations/unassign",
+    controller.unassignConversation,
+  );
 
-router.post("/conversations/:id/messages", ChatController.sendMessage);
+  router.patch(
+    "/conversations/status",
+    controller.changeStatus,
+  );
 
-router.get("/conversations/:id/messages", ChatController.getMessages);
+  router.patch(
+    "/conversations/priority",
+    controller.changePriority,
+  );
 
-router.patch("/messages/:id/read", ChatController.markMessageRead);
+  router.patch(
+    "/conversations/resolve",
+    controller.resolveConversation,
+  );
 
-router.get("/messages/unread/count", ChatController.getUnreadCount);
+  router.patch(
+    "/conversations/close",
+    controller.closeConversation,
+  );
 
-///////////////////////////////////////////////////////////
-// PARTICIPANTS
-///////////////////////////////////////////////////////////
+  router.patch(
+    "/conversations/reopen",
+    controller.reopenConversation,
+  );
 
-router.post(
-  "/conversations/:id/participants",
-  ChatController.addParticipant
-);
+  //////////////////////////////////////////////////////
+  // MESSAGES
+  //////////////////////////////////////////////////////
 
-router.delete(
-  "/conversations/:id/participants/:userId",
-  ChatController.removeParticipant
-);
+  router.post(
+    "/messages",
+    controller.sendMessage,
+  );
 
-router.patch(
-  "/conversations/:id/mute",
-  ChatController.muteConversation
-);
+  router.patch(
+    "/messages",
+    controller.editMessage,
+  );
 
-export default router;
+  router.delete(
+    "/messages",
+    controller.deleteMessage,
+  );
+
+  //////////////////////////////////////////////////////
+  // PARTICIPANTS
+  //////////////////////////////////////////////////////
+
+  router.post(
+    "/participants",
+    controller.addParticipant,
+  );
+
+  router.delete(
+    "/participants",
+    controller.removeParticipant,
+  );
+
+  router.patch(
+    "/participants/mute",
+    controller.muteParticipant,
+  );
+
+  //////////////////////////////////////////////////////
+  // TAGS
+  //////////////////////////////////////////////////////
+
+  router.post(
+    "/tags",
+    controller.addTag,
+  );
+
+  router.delete(
+    "/tags",
+    controller.removeTag,
+  );
+
+  return router;
+}

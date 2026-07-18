@@ -4,6 +4,8 @@ export type AuthUser = {
   id: string;
   roleId: string;
   roleName: string;
-  permissions: Set<PermissionString>;
+  permissions: ReadonlySet<PermissionString>;
+  isAuthenticated: true;
+  isGuest: false;
   isSuperAdmin: boolean;
 };

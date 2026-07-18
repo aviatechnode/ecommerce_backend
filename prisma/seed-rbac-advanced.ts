@@ -101,6 +101,13 @@ const permissionMatrix: Record<string, readonly string[]> =
       "close",
     ],
 
+     participant: [
+    "add",
+    "remove",
+    "mute",
+    "read",
+  ],
+
     message: [
       "create",
       "read",
@@ -257,27 +264,32 @@ const permissionGroups: Record<string, readonly string[]> =
       "role:delete",
     ],
 
-    CHAT_MANAGEMENT: [
-      "conversation:create",
-      "conversation:read",
-      "conversation:update",
-      "conversation:delete",
-      "conversation:assign",
-      "conversation:close",
+      CHAT_MANAGEMENT: [
+    "conversation:create",
+    "conversation:read",
+    "conversation:update",
+    "conversation:delete",
+    "conversation:assign",
+    "conversation:close",
 
-      "message:create",
-      "message:read",
-      "message:update",
-      "message:delete",
-      "message:read_all",
-      "message:delete_any",
+    "participant:add",
+    "participant:remove",
+    "participant:mute",
+    "participant:read",
 
-      "chat:read",
-      "chat:send",
-      "chat:moderate",
-      "chat:pin",
-      "chat:delete_any",
-    ],
+    "message:create",
+    "message:read",
+    "message:update",
+    "message:delete",
+    "message:read_all",
+    "message:delete_any",
+
+    "chat:read",
+    "chat:send",
+    "chat:moderate",
+    "chat:pin",
+    "chat:delete_any",
+  ],
 
     FITMENT_MANAGEMENT: [
       "fitment:create",
@@ -322,6 +334,75 @@ const roleDefinitions: readonly RoleDef[] = [
       "VEHICLE_MANAGEMENT",
     ],
   },
+  {
+  name: "SUPPORT_MANAGER",
+    description: "Manages support team and conversations",
+    groups: [
+      "CHAT_MANAGEMENT",
+      "ORDER_MANAGEMENT",
+      "FITMENT_MANAGEMENT",
+    ],
+  },
+  {
+    name: "AGENT",
+    description: "Customer support agent",
+    directPermissions: [
+    "conversation:read",
+    "conversation:update",
+    "conversation:assign",
+    "conversation:close",
+
+    "participant:add",
+    "participant:remove",
+    "participant:mute",
+    "participant:read",
+
+    "message:create",
+    "message:read",
+    "message:update",
+
+    "chat:read",
+    "chat:send",
+  ],
+  },
+
+  {
+    name: "QA",
+    description: "Support quality assurance reviewer",
+      directPermissions: [
+    "conversation:read",
+
+    "participant:read",
+
+    "message:read",
+    "message:read_all",
+
+    "chat:read",
+
+    "audit:read",
+  ],
+  },
+  {
+    name: "MODERATOR",
+    description: "Chat moderator",
+    directPermissions: [
+    "conversation:read",
+    "conversation:update",
+
+    "participant:read",
+    "participant:mute",
+
+    "message:read",
+    "message:update",
+    "message:delete_any",
+
+    "chat:read",
+    "chat:moderate",
+    "chat:delete_any",
+    "chat:pin",
+  ],
+  },
+
   {
     name: "CUSTOMER",
     description: "Customer access",

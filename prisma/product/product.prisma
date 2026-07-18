@@ -38,6 +38,7 @@ model Product {
   @@index([isActive])
   @@index([createdAt])
   fitmentResolutionLogs FitmentResolutionLog[]
+  conversations Conversation[]
 }
 
 model ProductVariant {

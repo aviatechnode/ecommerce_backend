@@ -97,4 +97,5 @@ model VehicleTrim {
   @@unique([engineId, name])
   @@index([engineId])
   @@index([isActive])
+  conversations Conversation[]
 }

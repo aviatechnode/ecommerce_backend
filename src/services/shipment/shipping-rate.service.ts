@@ -10,7 +10,7 @@ import {
   assertExists,
   assertUniqueShippingRate,
   assertValidRange,
-} from "../_shared/shippingValidation.helpers.js";
+} from "../../chat/_shared/shippingValidation.helpers.js";
 
 type ShippingRateRecord =
   Awaited<
